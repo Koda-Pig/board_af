@@ -242,6 +242,10 @@ fun SetupScreen(
         }
 
         item {
+            CloudSyncCard(cloud = state.cloud, actions = actions)
+        }
+
+        item {
             Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp)) {
                 Row(modifier = Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
                     Column {

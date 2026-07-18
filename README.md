@@ -14,8 +14,14 @@ This repository contains only the native Android application. It intentionally d
 - Versioned local persistence: a v2 JSON snapshot (kotlinx-serialization-json)
   in DataStore, with a one-way migration that reads the legacy
   `problems_v1` SharedPreferences entry and keeps it as a recovery backup
+- Optional cloud sync: Firebase Authentication + Firestore mirroring of the
+  local library with three-way merge and conflict copies (see
+  `docs/firebase-setup.md`); **not yet live** — disabled unless
+  `app/google-services.json` exists. Pilot users when enabled: Josh and Taylor.
 
-No account, backend, analytics, or internet permission is required.
+The app runs fully offline with no account. Cloud sync is opt-in per build
+(via `google-services.json`) and per user (via sign-in on the Setup screen),
+and is not provisioned for production use yet.
 
 ## Domain model
 

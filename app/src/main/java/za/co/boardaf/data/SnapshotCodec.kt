@@ -147,7 +147,7 @@ object SnapshotCodec {
         )
     }
 
-    private fun encodeSetup(setup: BoardSetup): JsonObject = buildJsonObject {
+    fun encodeSetup(setup: BoardSetup): JsonObject = buildJsonObject {
         put("kickboardEnabled", setup.kickboardEnabled)
         put("kickboardTopY", setup.kickboardTopY.toDouble())
         val confirmedAt = setup.confirmedAt
@@ -167,7 +167,7 @@ object SnapshotCodec {
         )
     }
 
-    private fun decodeSetup(json: JsonObject): BoardSetup {
+    fun decodeSetup(json: JsonObject): BoardSetup {
         val classifications = json.require("holds").jsonArray.associate { element ->
             val hold = element.jsonObject
             hold.require("id").jsonPrimitive.content to HoldClassification(

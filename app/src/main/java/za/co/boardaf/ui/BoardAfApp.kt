@@ -89,6 +89,10 @@ data class BoardActions(
     val onToggleHoldCapability: (String) -> Unit = {},
     val onConfirmBoardSetup: () -> Unit = {},
     val onSetGradeSystem: (GradeSystem) -> Unit = {},
+    val onCloudSignIn: (String, String) -> Unit = { _, _ -> },
+    val onCloudCreateAccount: (String, String) -> Unit = { _, _ -> },
+    val onCloudSignOut: () -> Unit = {},
+    val onCloudSyncNow: () -> Unit = {},
 )
 
 private enum class Destination(
@@ -148,6 +152,10 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onToggleHoldCapability = viewModel::toggleHoldCapability,
             onConfirmBoardSetup = viewModel::confirmBoardSetup,
             onSetGradeSystem = viewModel::setGradeSystem,
+            onCloudSignIn = viewModel::cloudSignIn,
+            onCloudCreateAccount = viewModel::cloudCreateAccount,
+            onCloudSignOut = viewModel::cloudSignOut,
+            onCloudSyncNow = viewModel::cloudSyncNow,
         )
     }
 

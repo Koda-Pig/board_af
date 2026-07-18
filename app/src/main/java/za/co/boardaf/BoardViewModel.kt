@@ -13,9 +13,13 @@ import kotlinx.coroutines.launch
 import za.co.boardaf.data.AndroidSnapshotIO
 import za.co.boardaf.data.BoardStore
 import za.co.boardaf.data.LibrarySnapshot
+import za.co.boardaf.data.SnapshotCodec
 import za.co.boardaf.data.StorageIssue
 import za.co.boardaf.data.UnreadableRecord
 import za.co.boardaf.data.VersionedBoardStore
+import za.co.boardaf.data.sync.CloudSync
+import za.co.boardaf.data.sync.CloudSyncState
+import za.co.boardaf.data.sync.FirestoreCloudSync
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.BoulderGrade
@@ -45,6 +49,7 @@ data class BoardUiState(
     val setup: BoardSetup = BoardSetup.default(),
     val storageIssues: List<StorageIssue> = emptyList(),
     val unreadableRecords: List<UnreadableRecord> = emptyList(),
+    val cloud: CloudSyncState = CloudSyncState(),
 ) {
     val board: ConfiguredBoard
         get() = ConfiguredBoard.from(setup)
@@ -66,6 +71,7 @@ sealed interface BoardEvent {
 class BoardViewModel @JvmOverloads constructor(
     application: Application,
     private val store: BoardStore = VersionedBoardStore(AndroidSnapshotIO(application)),
+    private val cloudSync: CloudSync? = runCatching { FirestoreCloudSync(application) }.getOrNull(),
 ) : AndroidViewModel(application) {
 
     private val mutableState = MutableStateFlow(BoardUiState(isLoading = true))
@@ -77,7 +83,8 @@ class BoardViewModel @JvmOverloads constructor(
     init {
         viewModelScope.launch {
             val result = store.load()
-            mutableState.value = BoardUiState(
+            // Preserve cloud state: startCloudSync() may already have collected READY.
+            mutableState.value = mutableState.value.copy(
                 isLoading = false,
                 problems = result.snapshot.problems,
                 selectedProblemId = result.snapshot.problems
@@ -88,7 +95,53 @@ class BoardViewModel @JvmOverloads constructor(
                 storageIssues = result.issues,
                 unreadableRecords = result.snapshot.unreadable,
             )
+            cloudSync?.onLocalChanged(result.snapshot)
         }
+        startCloudSync()
+    }
+
+    private fun startCloudSync() {
+        val sync = cloudSync ?: return
+        sync.start(viewModelScope)
+        viewModelScope.launch {
+            sync.state.collect { cloudState ->
+                mutableState.value = mutableState.value.copy(cloud = cloudState)
+            }
+        }
+        viewModelScope.launch {
+            sync.mergedSnapshots.collect { merged ->
+                val current = mutableState.value
+                // Ignore merges computed against a stale local snapshot; the engine
+                // re-plans from the latest onLocalChanged call.
+                if (SnapshotCodec.encode(current.toSnapshot()) != merged.basedOnFingerprint) return@collect
+                mutableState.value = current.copy(
+                    problems = merged.snapshot.problems,
+                    setup = merged.snapshot.setup,
+                    gradeSystem = merged.snapshot.gradeSystem,
+                    setterMode = merged.snapshot.setterMode,
+                    unreadableRecords = merged.snapshot.unreadable,
+                )
+                persist()
+            }
+        }
+    }
+
+    // --- Cloud sync ----------------------------------------------------------------
+
+    fun cloudSignIn(email: String, password: String) {
+        cloudSync?.signIn(email, password)
+    }
+
+    fun cloudCreateAccount(email: String, password: String) {
+        cloudSync?.createAccount(email, password)
+    }
+
+    fun cloudSignOut() {
+        cloudSync?.signOut()
+    }
+
+    fun cloudSyncNow() {
+        cloudSync?.syncNow()
     }
 
     // --- Library -----------------------------------------------------------------
@@ -368,16 +421,18 @@ class BoardViewModel @JvmOverloads constructor(
         }
 
     private fun persist() {
-        val current = mutableState.value
-        val snapshot = LibrarySnapshot(
-            setup = current.setup,
-            problems = current.problems,
-            gradeSystem = current.gradeSystem,
-            setterMode = current.setterMode,
-            unreadable = current.unreadableRecords,
-        )
+        val snapshot = mutableState.value.toSnapshot()
         viewModelScope.launch { store.save(snapshot) }
+        cloudSync?.onLocalChanged(snapshot)
     }
+
+    private fun BoardUiState.toSnapshot() = LibrarySnapshot(
+        setup = setup,
+        problems = problems,
+        gradeSystem = gradeSystem,
+        setterMode = setterMode,
+        unreadable = unreadableRecords,
+    )
 
     private fun emit(event: BoardEvent) {
         mutableEvents.tryEmit(event)

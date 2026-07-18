@@ -264,7 +264,9 @@ Switch the spike to Supabase if the Firestore model becomes dominated by joins, 
 | Sync unit | One problem document; one board setup document |
 | Conflict policy | Preserve a conflict copy rather than silent last-write-wins |
 | Authentication | Firebase Authentication with board membership rules |
+| Pilot users | Josh and Taylor (not yet live — see [firebase-setup.md](firebase-setup.md)) |
 | Media | None initially; evaluate R2 or a regional Cloud Storage bucket when uploads are real |
 | Production cost target | $0 for the pilot; usage-based thereafter |
 | Relational fallback | Supabase/Postgres |
 | Review trigger | Before adding ascents/attempts, community features, user-created boards, or media |
+| Live status | **Not yet live** — app code exists; Firebase project and shared config not provisioned |

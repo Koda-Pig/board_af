@@ -1,0 +1,70 @@
+rules_version = '2';
+
+// Deny by default; authorize through board ownership and membership.
+// Deploy with: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(boardId) {
+      // The first release keys each board by its owner's uid, so ownership is
+      // provable even before the board doc or member docs exist.
+      return signedIn() && request.auth.uid == boardId;
+    }
+
+    function memberRole(boardId) {
+      return get(/databases/$(database)/documents/boards/$(boardId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function isMember(boardId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/boards/$(boardId)/members/$(request.auth.uid));
+    }
+
+    function canSet(boardId) {
+      return isOwner(boardId) ||
+        (isMember(boardId) && memberRole(boardId) in ['OWNER', 'SETTER']);
+    }
+
+    function validPayloadDoc() {
+      return request.resource.data.payload is string &&
+        request.resource.data.payload.size() < 100000 &&
+        request.resource.data.schemaVersion is int &&
+        request.resource.data.revision is int &&
+        request.resource.data.revision > 0 &&
+        request.resource.data.updatedBy == request.auth.uid;
+    }
+
+    match /boards/{boardId} {
+      allow read: if isOwner(boardId) || isMember(boardId);
+      // Board setup and settings are owner-only.
+      allow create, update: if isOwner(boardId) &&
+        request.resource.data.ownerId == boardId &&
+        (!('payload' in request.resource.data) || validPayloadDoc());
+      allow delete: if false;
+
+      match /members/{memberId} {
+        allow read: if isOwner(boardId) || isMember(boardId);
+        // Only the owner manages membership; the owner's own record is fixed.
+        allow write: if isOwner(boardId) &&
+          request.resource.data.role in ['OWNER', 'SETTER', 'CLIMBER'] &&
+          (memberId != boardId || request.resource.data.role == 'OWNER');
+        allow delete: if isOwner(boardId) && memberId != boardId;
+      }
+
+      match /problems/{problemId} {
+        allow read: if isOwner(boardId) || isMember(boardId);
+        allow create, update: if canSet(boardId) && validPayloadDoc();
+        // The app archives instead of deleting; keep destructive ops closed.
+        allow delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
