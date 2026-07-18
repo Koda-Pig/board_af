@@ -9,9 +9,28 @@ This repository contains only the native Android application. It intentionally d
 - Kotlin
 - Jetpack Compose with Material 3
 - Navigation Compose
-- A single `AndroidViewModel` and local `SharedPreferences` JSON persistence
+- A single `AndroidViewModel` coordinating pure, testable collaborators:
+  `ProblemValidator`, `SetterReducer`, `BoardTransforms`, and a `BoardStore`
+- Versioned local persistence: a v2 JSON snapshot (kotlinx-serialization-json)
+  in DataStore, with a one-way migration that reads the legacy
+  `problems_v1` SharedPreferences entry and keeps it as a recovery backup
 
 No account, backend, analytics, or internet permission is required.
+
+## Domain model
+
+A problem separates four concepts that the first version conflated:
+
+1. where a hold is on the board (`HoldDefinition` + zone),
+2. what the physical hold can be used for (`HoldCapability`),
+3. the hold's role in one problem (`START`, `REGULAR`, `FOOT_ONLY`, `FINISH`), and
+4. the problem-wide feet rule (`MARKED_ONLY`, `OPEN_KICKBOARD`,
+   `FEET_FOLLOW_MARKED`, `ANY_FEET`, `CAMPUS`).
+
+Problems carry a lifecycle (`DRAFT`, `NEEDS_REVIEW`, `PUBLISHED`, `BENCHMARK`,
+`ARCHIVED`); publishing requires zero validation errors plus an explicit
+successful-forerun confirmation. Kickboard holds (h37-h43 on the bundled board)
+are foot-only and can never host a start, regular, or finish role.
 
 ## Open and run
 
@@ -34,7 +53,13 @@ To build from the terminal:
 
 The source photo is 960 × 1280 (3:4). `BoardSurface` forces that exact aspect ratio and draws the photo with `ContentScale.FillBounds`. Hold centers are recorded at exact source-photo pixels and normalized to `0f..1f`, then positioned inside the same Compose box as the image. Screen width only changes the size of that shared box, so the bitmap and overlays scale together.
 
-The geometry is covered by `BoardGeometryTest` at phone, tablet, and large-screen widths.
+Pinch zoom and pan transform the photo and marker anchors through the same
+`BoardTransform`, clamped so the board can never leave the screen; stored
+coordinates stay normalized and interactive targets stay 44 dp at every scale.
+Double-tap or the fit button resets the view.
+
+The geometry is covered by `BoardGeometryTest` and `BoardTransformTest` at
+phone, tablet, and large-screen widths.
 
 ## Project layout
 

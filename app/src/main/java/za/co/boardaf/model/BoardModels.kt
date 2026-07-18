@@ -1,12 +1,5 @@
 package za.co.boardaf.model
 
-enum class HoldRole(val label: String) {
-    START("Start"),
-    HAND("Hand"),
-    FOOT("Foot"),
-    FINISH("Finish"),
-}
-
 enum class Accent(val label: String) {
     SKY("Sky"),
     CORAL("Coral"),
@@ -49,11 +42,13 @@ enum class BoulderGrade(
             GradeSystem.V_SCALE -> entries.distinctBy { it.vLabel }
         }
 
-        fun fromPersisted(value: String): BoulderGrade = entries.firstOrNull { grade ->
+        fun fromPersistedOrNull(value: String): BoulderGrade? = entries.firstOrNull { grade ->
             grade.name.equals(value, ignoreCase = true) ||
                 grade.frenchLabel.equals(value, ignoreCase = true) ||
                 grade.vLabel.equals(value, ignoreCase = true)
-        } ?: F6A
+        }
+
+        fun fromPersisted(value: String): BoulderGrade = fromPersistedOrNull(value) ?: F6A
     }
 }
 
@@ -62,36 +57,14 @@ data class HoldDefinition(
     val point: NormalizedPoint,
 )
 
-data class ProblemHold(
-    val holdId: String,
-    val role: HoldRole,
-)
-
-data class Problem(
-    val id: String,
-    val name: String,
-    val grade: BoulderGrade,
-    val accent: Accent,
-    val setter: String,
-    val note: String,
-    val holds: List<ProblemHold>,
-)
-
-data class DraftProblem(
-    val name: String = "",
-    val grade: BoulderGrade = BoulderGrade.F6A,
-    val accent: Accent = Accent.SKY,
-    val note: String = "",
-    val holds: List<ProblemHold> = emptyList(),
-) {
-    val canSave: Boolean
-        get() = name.isNotBlank() &&
-            holds.size >= 2 &&
-            holds.any { it.role == HoldRole.START } &&
-            holds.any { it.role == HoldRole.FINISH }
-}
-
 object BoardDefaults {
+    const val BOARD_NAME = "Home board"
+    const val BOARD_ANGLE_DEGREES = 20
+    const val BOARD_HEIGHT_METERS = 4.8f
+
+    /** Midway between the h36 row (y=983) and the h37 kicker row (y=1107) in source pixels. */
+    val DEFAULT_KICKBOARD_TOP_Y = 1045f / SOURCE_IMAGE_HEIGHT
+
     val holds = listOf(
         hold("h01", 154f, 81f), hold("h02", 405f, 77f), hold("h03", 598f, 75f), hold("h04", 801f, 74f),
         hold("h05", 114f, 238f), hold("h06", 306f, 209f), hold("h07", 649f, 234f), hold("h08", 751f, 233f), hold("h09", 845f, 280f),
@@ -106,60 +79,88 @@ object BoardDefaults {
         hold("h40", 157f, 1204f), hold("h41", 300f, 1205f), hold("h42", 522f, 1208f), hold("h43", 807f, 1208f),
     )
 
-    val problems = listOf(
-        Problem(
-            id = "tidepool",
-            name = "Tidepool",
-            grade = BoulderGrade.F6B,
-            accent = Accent.SKY,
-            setter = "You",
-            note = "Stay square through the middle, then commit to the blue finish.",
-            holds = listOf(
-                problemHold("h43", HoldRole.START), problemHold("h34", HoldRole.FOOT),
-                problemHold("h31", HoldRole.HAND), problemHold("h21", HoldRole.HAND),
-                problemHold("h17", HoldRole.FOOT), problemHold("h13", HoldRole.FINISH),
+    val problems: List<Problem> = run {
+        val board = ConfiguredBoard.from(BoardSetup.default(holds), holds)
+        listOf(
+            seed(
+                id = "tidepool",
+                name = "Tidepool",
+                grade = BoulderGrade.F6B,
+                accent = Accent.SKY,
+                setter = "You",
+                note = "Stay square through the middle, then commit to the blue finish.",
+                assignments = listOf(
+                    assign("h43", ProblemHoldRole.START), assign("h34", ProblemHoldRole.FOOT_ONLY),
+                    assign("h31", ProblemHoldRole.REGULAR), assign("h21", ProblemHoldRole.REGULAR),
+                    assign("h17", ProblemHoldRole.FOOT_ONLY), assign("h13", ProblemHoldRole.FINISH),
+                ),
             ),
-        ),
-        Problem(
-            id = "moss-line",
-            name = "Moss line",
-            grade = BoulderGrade.F5_PLUS,
-            accent = Accent.MOSS,
-            setter = "You",
-            note = "A relaxed green warm-up with a long final reach.",
-            holds = listOf(
-                problemHold("h37", HoldRole.START), problemHold("h27", HoldRole.HAND),
-                problemHold("h20", HoldRole.FOOT), problemHold("h16", HoldRole.HAND),
-                problemHold("h06", HoldRole.FINISH),
+            seed(
+                id = "moss-line",
+                name = "Moss line",
+                grade = BoulderGrade.F5_PLUS,
+                accent = Accent.MOSS,
+                setter = "You",
+                note = "A relaxed green warm-up with a long final reach.",
+                assignments = listOf(
+                    assign("h37", ProblemHoldRole.START), assign("h27", ProblemHoldRole.REGULAR),
+                    assign("h20", ProblemHoldRole.FOOT_ONLY), assign("h16", ProblemHoldRole.REGULAR),
+                    assign("h06", ProblemHoldRole.FINISH),
+                ),
             ),
-        ),
-        Problem(
-            id = "chalk-ghost",
-            name = "Chalk ghost",
-            grade = BoulderGrade.F7A,
-            accent = Accent.CORAL,
-            setter = "Maya",
-            note = "Compression on the left panel. The h14 catch is the whole game.",
-            holds = listOf(
-                problemHold("h40", HoldRole.START), problemHold("h29", HoldRole.HAND),
-                problemHold("h25", HoldRole.FOOT), problemHold("h19", HoldRole.HAND),
-                problemHold("h14", HoldRole.HAND), problemHold("h05", HoldRole.HAND),
-                problemHold("h01", HoldRole.FINISH),
+            seed(
+                id = "chalk-ghost",
+                name = "Chalk ghost",
+                grade = BoulderGrade.F7A,
+                accent = Accent.CORAL,
+                setter = "Maya",
+                note = "Compression on the left panel. The h14 catch is the whole game.",
+                assignments = listOf(
+                    assign("h40", ProblemHoldRole.START), assign("h29", ProblemHoldRole.REGULAR),
+                    assign("h25", ProblemHoldRole.FOOT_ONLY), assign("h19", ProblemHoldRole.REGULAR),
+                    assign("h14", ProblemHoldRole.REGULAR), assign("h05", ProblemHoldRole.REGULAR),
+                    assign("h01", ProblemHoldRole.FINISH),
+                ),
             ),
-        ),
-        Problem(
-            id = "golden-hour",
-            name = "Golden hour",
-            grade = BoulderGrade.F6A,
-            accent = Accent.OCHRE,
-            setter = "Jono",
-            note = "Use the timber rail as a sidepull and keep your hips in.",
-            holds = listOf(
-                problemHold("h34", HoldRole.START), problemHold("h35", HoldRole.FOOT),
-                problemHold("h24", HoldRole.HAND), problemHold("h23", HoldRole.HAND),
-                problemHold("h10", HoldRole.HAND), problemHold("h04", HoldRole.FINISH),
+            seed(
+                id = "golden-hour",
+                name = "Golden hour",
+                grade = BoulderGrade.F6A,
+                accent = Accent.OCHRE,
+                setter = "Jono",
+                note = "Use the timber rail as a sidepull and keep your hips in.",
+                assignments = listOf(
+                    assign("h34", ProblemHoldRole.START), assign("h35", ProblemHoldRole.FOOT_ONLY),
+                    assign("h24", ProblemHoldRole.REGULAR), assign("h23", ProblemHoldRole.REGULAR),
+                    assign("h10", ProblemHoldRole.REGULAR), assign("h04", ProblemHoldRole.FINISH),
+                ),
             ),
-        ),
+        ).map { problem ->
+            val issues = ProblemValidator.validate(problem, board)
+            problem.copy(publicationState = ProblemValidator.resolveState(problem.publicationState, issues))
+        }
+    }
+
+    private fun seed(
+        id: String,
+        name: String,
+        grade: BoulderGrade,
+        accent: Accent,
+        setter: String,
+        note: String,
+        assignments: List<ProblemAssignment>,
+    ) = Problem(
+        id = id,
+        name = name,
+        grade = grade,
+        accent = accent,
+        setter = setter,
+        note = note,
+        feetRule = FeetRule.MARKED_ONLY,
+        startRule = startRuleFor(assignments),
+        finishRule = finishRuleFor(assignments),
+        publicationState = PublicationState.PUBLISHED,
+        assignments = assignments,
     )
 
     private fun hold(id: String, sourceX: Float, sourceY: Float) = HoldDefinition(
@@ -170,7 +171,7 @@ object BoardDefaults {
         ),
     )
 
-    private fun problemHold(id: String, role: HoldRole) = ProblemHold(id, role)
+    private fun assign(id: String, role: ProblemHoldRole) = ProblemAssignment(id, role)
 
     private const val SOURCE_IMAGE_WIDTH = 960f
     private const val SOURCE_IMAGE_HEIGHT = 1280f
