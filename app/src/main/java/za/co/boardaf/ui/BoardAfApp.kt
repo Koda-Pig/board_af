@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,7 +43,6 @@ private enum class Destination(
 ) {
     BOARD("board", "Board", Icons.Rounded.Home),
     PROBLEMS("problems", "Problems", Icons.AutoMirrored.Rounded.ViewList),
-    SESSIONS("sessions", "Sessions", Icons.Rounded.BarChart),
     SETUP("setup", "Setup", Icons.Rounded.Settings),
 }
 
@@ -151,7 +149,6 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                             onClearDraft = viewModel::clearDraftHolds,
                             onSaveDraft = viewModel::saveDraft,
                             onCancelDraft = viewModel::cancelSetting,
-                            onLogAttempt = viewModel::logAttempt,
                         )
                     }
                     composable(Destination.PROBLEMS.route) {
@@ -165,9 +162,6 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                                 }
                             },
                         )
-                    }
-                    composable(Destination.SESSIONS.route) {
-                        SessionsScreen(state = state, contentPadding = padding)
                     }
                     composable(Destination.SETUP.route) {
                         SetupScreen(contentPadding = padding)

@@ -31,35 +31,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.EmojiEvents
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,21 +58,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import za.co.boardaf.BoardUiState
 import za.co.boardaf.R
 import za.co.boardaf.model.Accent
-import za.co.boardaf.model.Attempt
 import za.co.boardaf.model.BoardDefaults
 import za.co.boardaf.model.BoardGeometry
 import za.co.boardaf.model.DraftProblem
 import za.co.boardaf.model.HoldRole
 import za.co.boardaf.model.Problem
 import za.co.boardaf.ui.theme.BoardDark
-import za.co.boardaf.ui.theme.BoardInk
 import za.co.boardaf.ui.theme.BoardLine
 import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.BoardPaper
@@ -92,8 +77,6 @@ import za.co.boardaf.ui.theme.Gold
 import za.co.boardaf.ui.theme.Moss
 import za.co.boardaf.ui.theme.Sky
 import za.co.boardaf.ui.theme.BoardAfTheme
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 fun BoardScreen(
@@ -108,10 +91,8 @@ fun BoardScreen(
     onClearDraft: () -> Unit,
     onSaveDraft: () -> Unit,
     onCancelDraft: () -> Unit,
-    onLogAttempt: (String, Boolean, Int) -> Unit,
 ) {
     val problem = state.selectedProblem
-    var climbing by rememberSaveable { mutableStateOf(false) }
     val activeHolds = if (state.isSetting) state.draft.holds else problem?.holds.orEmpty()
 
     BoxWithConstraints(
@@ -164,7 +145,7 @@ fun BoardScreen(
                                 onCancel = onCancelDraft,
                             )
                         } else if (problem != null) {
-                            ProblemDetails(problem = problem, onStart = { climbing = true })
+                            ProblemDetails(problem = problem)
                         }
                     }
                 }
@@ -200,22 +181,11 @@ fun BoardScreen(
                             onCancel = onCancelDraft,
                         )
                     } else if (problem != null) {
-                        ProblemDetails(problem = problem, onStart = { climbing = true })
+                        ProblemDetails(problem = problem)
                     }
                 }
             }
         }
-    }
-
-    if (climbing && problem != null) {
-        ClimbSheet(
-            problem = problem,
-            onDismiss = { climbing = false },
-            onComplete = { sent, seconds ->
-                onLogAttempt(problem.id, sent, seconds)
-                climbing = false
-            },
-        )
     }
 }
 
@@ -254,7 +224,7 @@ private fun BoardHeader(problem: Problem?, isSetting: Boolean) {
 }
 
 @Composable
-private fun ProblemDetails(problem: Problem, onStart: () -> Unit) {
+private fun ProblemDetails(problem: Problem) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
@@ -273,7 +243,7 @@ private fun ProblemDetails(problem: Problem, onStart: () -> Unit) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(problem.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "${problem.grade} · ${problem.holds.size} holds · ${problem.sends} sends",
+                        "${problem.grade} · ${problem.holds.size} holds",
                         color = BoardMuted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -294,15 +264,6 @@ private fun ProblemDetails(problem: Problem, onStart: () -> Unit) {
                         Text(role.label, style = MaterialTheme.typography.labelSmall, color = BoardMuted)
                     }
                 }
-            }
-            Button(
-                onClick = onStart,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = BoardDark),
-            ) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(7.dp))
-                Text("Start climb", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -431,58 +392,6 @@ private fun SetterControls(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ClimbSheet(
-    problem: Problem,
-    onDismiss: () -> Unit,
-    onComplete: (Boolean, Int) -> Unit,
-) {
-    var elapsed by remember { mutableIntStateOf(0) }
-    LaunchedEffect(problem.id) {
-        while (true) {
-            delay(1_000)
-            elapsed += 1
-        }
-    }
-
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = BoardDark) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("CLIMBING NOW", style = MaterialTheme.typography.labelMedium, color = Coral, fontWeight = FontWeight.Bold)
-            Text(problem.name, style = MaterialTheme.typography.headlineSmall, color = BoardPaper, fontWeight = FontWeight.Bold)
-            Text(
-                text = "%02d:%02d".format(elapsed / 60, elapsed % 60),
-                style = MaterialTheme.typography.displayMedium,
-                color = BoardPaper,
-                fontWeight = FontWeight.Bold,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = { onComplete(false, elapsed) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Close, contentDescription = null)
-                    Spacer(Modifier.width(5.dp))
-                    Text("Attempt")
-                }
-                Button(
-                    onClick = { onComplete(true, elapsed) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Moss, contentColor = BoardDark),
-                ) {
-                    Icon(Icons.Rounded.Check, contentDescription = null)
-                    Spacer(Modifier.width(5.dp))
-                    Text("Log send")
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-    }
-}
-
 @Composable
 fun ProblemsScreen(
     state: BoardUiState,
@@ -545,7 +454,7 @@ fun ProblemsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(problem.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            "${problem.setter} · ${problem.holds.size} holds · ${problem.sends} sends",
+                            "${problem.setter} · ${problem.holds.size} holds",
                             style = MaterialTheme.typography.bodySmall,
                             color = BoardMuted,
                         )
@@ -573,106 +482,6 @@ fun ProblemsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun SessionsScreen(state: BoardUiState, contentPadding: PaddingValues) {
-    val sentCount = state.attempts.count { it.sent }
-    val sendRate = if (state.attempts.isEmpty()) 0 else sentCount * 100 / state.attempts.size
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item {
-            Text("TRAINING LOG", style = MaterialTheme.typography.labelSmall, color = BoardMuted, fontWeight = FontWeight.Bold)
-            Text("Your sessions", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("Sends", sentCount.toString(), Icons.Rounded.EmojiEvents, Modifier.weight(1f))
-                StatCard("Attempts", state.attempts.size.toString(), Icons.Rounded.Timer, Modifier.weight(1f))
-                StatCard("Send rate", "$sendRate%", Icons.Rounded.Check, Modifier.weight(1f))
-            }
-            Text(
-                "RECENT ATTEMPTS",
-                modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = BoardMuted,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        items(state.attempts, key = { it.id }) { attempt ->
-            AttemptRow(attempt = attempt, problem = state.problems.firstOrNull { it.id == attempt.problemId })
-        }
-        if (state.attempts.isEmpty()) {
-            item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Icon(Icons.Rounded.Timer, contentDescription = null, tint = Coral)
-                        Spacer(Modifier.height(8.dp))
-                        Text("No attempts yet", fontWeight = FontWeight.Bold)
-                        Text("Start a climb from the board.", color = BoardMuted, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatCard(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier) {
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Icon(icon, contentDescription = null, tint = Coral, modifier = Modifier.size(19.dp))
-            Spacer(Modifier.height(10.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = BoardMuted, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-private fun AttemptRow(attempt: Attempt, problem: Problem?) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .background(if (attempt.sent) Moss.copy(alpha = 0.28f) else Coral.copy(alpha = 0.22f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (attempt.sent) Icons.Rounded.Check else Icons.Rounded.Close,
-                    contentDescription = if (attempt.sent) "Sent" else "Attempted",
-                    tint = if (attempt.sent) Color(0xFF4F8143) else Coral,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Spacer(Modifier.width(11.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(problem?.name ?: "Unknown problem", fontWeight = FontWeight.Bold)
-                Text(
-                    "${attempt.durationSeconds / 60}m ${attempt.durationSeconds % 60}s · ${DateFormat.getDateInstance(DateFormat.SHORT).format(Date(attempt.timestamp))}",
-                    color = BoardMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text(problem?.grade.orEmpty(), fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -774,7 +583,6 @@ private fun BoardScreenPhonePreview() {
             onClearDraft = {},
             onSaveDraft = {},
             onCancelDraft = {},
-            onLogAttempt = { _, _, _ -> },
         )
     }
 }

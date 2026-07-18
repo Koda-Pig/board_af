@@ -7,7 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import za.co.boardaf.data.BoardRepository
 import za.co.boardaf.model.Accent
-import za.co.boardaf.model.Attempt
 import za.co.boardaf.model.DraftProblem
 import za.co.boardaf.model.HoldRole
 import za.co.boardaf.model.Problem
@@ -15,7 +14,6 @@ import za.co.boardaf.model.ProblemHold
 
 data class BoardUiState(
     val problems: List<Problem> = emptyList(),
-    val attempts: List<Attempt> = emptyList(),
     val selectedProblemId: String? = null,
     val isSetting: Boolean = false,
     val selectedRole: HoldRole = HoldRole.HAND,
@@ -32,7 +30,6 @@ class BoardViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableState = MutableStateFlow(
         BoardUiState(
             problems = initialProblems,
-            attempts = repository.loadAttempts(),
             selectedProblemId = initialProblems.firstOrNull()?.id,
         ),
     )
@@ -100,28 +97,6 @@ class BoardViewModel(application: Application) : AndroidViewModel(application) {
             isSetting = false,
             draft = DraftProblem(),
         )
-    }
-
-    fun logAttempt(problemId: String, sent: Boolean, durationSeconds: Int) {
-        val current = mutableState.value
-        val attempt = Attempt(
-            id = System.currentTimeMillis(),
-            problemId = problemId,
-            sent = sent,
-            durationSeconds = durationSeconds,
-            timestamp = System.currentTimeMillis(),
-        )
-        val attempts = listOf(attempt) + current.attempts
-        val problems = if (sent) {
-            current.problems.map { problem ->
-                if (problem.id == problemId) problem.copy(sends = problem.sends + 1) else problem
-            }
-        } else {
-            current.problems
-        }
-        repository.saveAttempts(attempts)
-        repository.saveProblems(problems)
-        mutableState.value = current.copy(attempts = attempts, problems = problems)
     }
 
     private fun updateDraft(transform: DraftProblem.() -> DraftProblem) {

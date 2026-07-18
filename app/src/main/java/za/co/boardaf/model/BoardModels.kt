@@ -32,15 +32,6 @@ data class Problem(
     val setter: String,
     val note: String,
     val holds: List<ProblemHold>,
-    val sends: Int = 0,
-)
-
-data class Attempt(
-    val id: Long,
-    val problemId: String,
-    val sent: Boolean,
-    val durationSeconds: Int,
-    val timestamp: Long,
 )
 
 data class DraftProblem(
@@ -87,7 +78,6 @@ object BoardDefaults {
                 problemHold("h31", HoldRole.HAND), problemHold("h21", HoldRole.HAND),
                 problemHold("h17", HoldRole.FOOT), problemHold("h13", HoldRole.FINISH),
             ),
-            sends = 7,
         ),
         Problem(
             id = "moss-line",
@@ -101,7 +91,6 @@ object BoardDefaults {
                 problemHold("h20", HoldRole.FOOT), problemHold("h16", HoldRole.HAND),
                 problemHold("h06", HoldRole.FINISH),
             ),
-            sends = 12,
         ),
         Problem(
             id = "chalk-ghost",
@@ -116,7 +105,6 @@ object BoardDefaults {
                 problemHold("h14", HoldRole.HAND), problemHold("h05", HoldRole.HAND),
                 problemHold("h01", HoldRole.FINISH),
             ),
-            sends = 2,
         ),
         Problem(
             id = "golden-hour",
@@ -130,7 +118,6 @@ object BoardDefaults {
                 problemHold("h24", HoldRole.HAND), problemHold("h23", HoldRole.HAND),
                 problemHold("h10", HoldRole.HAND), problemHold("h04", HoldRole.FINISH),
             ),
-            sends = 9,
         ),
     )
 

@@ -2,6 +2,8 @@
 
 A small, offline-first app for setting and climbing problems on a single home board.
 
+This repository contains only the native Android application. It intentionally does not include climb timing, attempt logging, or a training-session log.
+
 ## Stack
 
 - Kotlin
@@ -34,6 +36,8 @@ The source photo is 960 × 1280 (3:4). `BoardSurface` forces that exact aspect r
 
 The geometry is covered by `BoardGeometryTest` at phone, tablet, and large-screen widths.
 
-## Previous web prototype
+## Project layout
 
-The original Vite prototype remains in `src/` and `public/` for reference. The native Android project is the repository root and the installable application lives in `app/`.
+- `app/` — Android application source, resources, and tests
+- `gradle/` and Gradle wrapper files — reproducible Android builds
+- `docs/` — project plans and product research
