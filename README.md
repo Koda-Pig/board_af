@@ -30,7 +30,7 @@ To build from the terminal:
 
 ## Hold alignment
 
-The source photo is 960 × 1280 (3:4). `BoardSurface` forces that exact aspect ratio and draws the photo with `ContentScale.FillBounds`. Hold centers are normalized photo coordinates (`0f..1f`) and are positioned inside the same Compose box as the image. Screen width only changes the size of that shared box, so the bitmap and overlays scale together.
+The source photo is 960 × 1280 (3:4). `BoardSurface` forces that exact aspect ratio and draws the photo with `ContentScale.FillBounds`. Hold centers are recorded at exact source-photo pixels and normalized to `0f..1f`, then positioned inside the same Compose box as the image. Screen width only changes the size of that shared box, so the bitmap and overlays scale together.
 
 The geometry is covered by `BoardGeometryTest` at phone, tablet, and large-screen widths.
 

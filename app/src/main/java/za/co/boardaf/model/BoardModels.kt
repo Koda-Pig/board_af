@@ -61,17 +61,17 @@ object BoardDefaults {
     val grades = (0..8).map { "V$it" }
 
     val holds = listOf(
-        hold("h01", 16.1f, 5.7f), hold("h02", 42.2f, 6.1f), hold("h03", 62.4f, 6.2f), hold("h04", 83.1f, 6.4f),
-        hold("h05", 12.0f, 18.4f), hold("h06", 32.1f, 16.7f), hold("h07", 67.8f, 19.2f), hold("h08", 77.3f, 18.8f), hold("h09", 88.1f, 22.1f),
-        hold("h10", 32.0f, 22.8f), hold("h11", 42.1f, 22.1f), hold("h12", 52.0f, 21.8f), hold("h13", 72.4f, 28.0f),
-        hold("h14", 26.2f, 31.8f), hold("h15", 62.0f, 31.1f), hold("h16", 42.6f, 34.7f), hold("h17", 71.9f, 34.9f),
-        hold("h18", 16.1f, 37.7f), hold("h19", 37.1f, 40.5f), hold("h20", 51.8f, 37.8f), hold("h21", 67.3f, 40.6f), hold("h22", 87.7f, 40.5f),
-        hold("h23", 47.5f, 43.4f), hold("h24", 77.7f, 46.1f), hold("h25", 31.8f, 47.1f),
-        hold("h26", 12.2f, 54.0f), hold("h27", 52.2f, 53.5f), hold("h28", 88.3f, 55.7f),
-        hold("h29", 32.1f, 60.1f), hold("h30", 47.6f, 62.7f), hold("h31", 67.4f, 62.8f),
-        hold("h32", 16.3f, 69.5f), hold("h33", 47.7f, 72.5f), hold("h34", 62.0f, 77.3f), hold("h35", 83.9f, 76.2f), hold("h36", 31.8f, 79.2f),
-        hold("h37", 27.0f, 88.8f), hold("h38", 45.4f, 88.5f), hold("h39", 72.5f, 88.7f),
-        hold("h40", 16.3f, 96.4f), hold("h41", 31.5f, 96.2f), hold("h42", 54.5f, 96.3f), hold("h43", 84.5f, 96.0f),
+        hold("h01", 154f, 81f), hold("h02", 405f, 77f), hold("h03", 598f, 75f), hold("h04", 801f, 74f),
+        hold("h05", 114f, 238f), hold("h06", 306f, 209f), hold("h07", 649f, 234f), hold("h08", 751f, 233f), hold("h09", 845f, 280f),
+        hold("h10", 305f, 277f), hold("h11", 404f, 278f), hold("h12", 504f, 272f), hold("h13", 697f, 355f),
+        hold("h14", 254f, 396f), hold("h15", 595f, 394f), hold("h16", 406f, 435f), hold("h17", 697f, 433f),
+        hold("h18", 157f, 477f), hold("h19", 356f, 514f), hold("h20", 502f, 479f), hold("h21", 644f, 511f), hold("h22", 846f, 507f),
+        hold("h23", 456f, 550f), hold("h24", 754f, 588f), hold("h25", 308f, 592f),
+        hold("h26", 116f, 678f), hold("h27", 502f, 670f), hold("h28", 843f, 705f),
+        hold("h29", 306f, 744f), hold("h30", 457f, 785f), hold("h31", 648f, 785f),
+        hold("h32", 155f, 866f), hold("h33", 457f, 902f), hold("h34", 600f, 944f), hold("h35", 800f, 941f), hold("h36", 304f, 983f),
+        hold("h37", 257f, 1107f), hold("h38", 442f, 1108f), hold("h39", 708f, 1109f),
+        hold("h40", 157f, 1204f), hold("h41", 300f, 1205f), hold("h42", 522f, 1208f), hold("h43", 807f, 1208f),
     )
 
     val problems = listOf(
@@ -134,10 +134,16 @@ object BoardDefaults {
         ),
     )
 
-    private fun hold(id: String, xPercent: Float, yPercent: Float) = HoldDefinition(
+    private fun hold(id: String, sourceX: Float, sourceY: Float) = HoldDefinition(
         id = id,
-        point = NormalizedPoint(xPercent / 100f, yPercent / 100f),
+        point = NormalizedPoint(
+            x = sourceX / SOURCE_IMAGE_WIDTH,
+            y = sourceY / SOURCE_IMAGE_HEIGHT,
+        ),
     )
 
     private fun problemHold(id: String, role: HoldRole) = ProblemHold(id, role)
+
+    private const val SOURCE_IMAGE_WIDTH = 960f
+    private const val SOURCE_IMAGE_HEIGHT = 1280f
 }
