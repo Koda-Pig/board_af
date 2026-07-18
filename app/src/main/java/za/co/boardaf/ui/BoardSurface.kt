@@ -94,11 +94,11 @@ private fun HoldTarget(
         Canvas(modifier = Modifier.size(if (role == HoldRole.FOOT) 27.dp else 32.dp)) {
             if (role != null) {
                 drawCircle(
-                    color = Color(0xB51A1D1A),
+                    color = Color(0x401A1D1A),
                     radius = size.minDimension / 2,
                 )
                 drawCircle(
-                    color = ringColor.copy(alpha = 0.18f),
+                    color = ringColor.copy(alpha = 0.08f),
                     radius = size.minDimension / 2 - 2.dp.toPx(),
                 )
                 drawCircle(
