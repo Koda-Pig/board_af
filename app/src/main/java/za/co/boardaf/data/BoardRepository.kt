@@ -6,6 +6,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoardDefaults
+import za.co.boardaf.model.BoulderGrade
+import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.HoldRole
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.ProblemHold
@@ -27,10 +29,19 @@ class BoardRepository(context: Context) {
         preferences.edit { putString(KEY_PROBLEMS, array.toString()) }
     }
 
+    fun loadGradeSystem(): GradeSystem {
+        val saved = preferences.getString(KEY_GRADE_SYSTEM, null)
+        return GradeSystem.entries.firstOrNull { it.name == saved } ?: GradeSystem.FRENCH
+    }
+
+    fun saveGradeSystem(gradeSystem: GradeSystem) {
+        preferences.edit { putString(KEY_GRADE_SYSTEM, gradeSystem.name) }
+    }
+
     private fun Problem.toJson() = JSONObject().apply {
         put("id", id)
         put("name", name)
-        put("grade", grade)
+        put("grade", grade.name)
         put("accent", accent.name)
         put("setter", setter)
         put("note", note)
@@ -56,7 +67,7 @@ class BoardRepository(context: Context) {
         return Problem(
             id = getString("id"),
             name = getString("name"),
-            grade = getString("grade"),
+            grade = BoulderGrade.fromPersisted(getString("grade")),
             accent = Accent.valueOf(getString("accent")),
             setter = getString("setter"),
             note = optString("note"),
@@ -66,5 +77,6 @@ class BoardRepository(context: Context) {
 
     private companion object {
         const val KEY_PROBLEMS = "problems_v1"
+        const val KEY_GRADE_SYSTEM = "grade_system"
     }
 }

@@ -65,7 +65,9 @@ import za.co.boardaf.R
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoardDefaults
 import za.co.boardaf.model.BoardGeometry
+import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.DraftProblem
+import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.HoldRole
 import za.co.boardaf.model.Problem
 import za.co.boardaf.ui.theme.BoardDark
@@ -85,7 +87,7 @@ fun BoardScreen(
     onSelectRole: (HoldRole) -> Unit,
     onHoldClick: (String) -> Unit,
     onDraftNameChange: (String) -> Unit,
-    onDraftGradeChange: (String) -> Unit,
+    onDraftGradeChange: (BoulderGrade) -> Unit,
     onDraftAccentChange: (Accent) -> Unit,
     onDraftNoteChange: (String) -> Unit,
     onClearDraft: () -> Unit,
@@ -113,7 +115,11 @@ fun BoardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     item {
-                        BoardHeader(problem = problem, isSetting = state.isSetting)
+                        BoardHeader(
+                            problem = problem,
+                            isSetting = state.isSetting,
+                            gradeSystem = state.gradeSystem,
+                        )
                         BoardSurface(
                             activeHolds = activeHolds,
                             isSetting = state.isSetting,
@@ -143,9 +149,10 @@ fun BoardScreen(
                                 onClear = onClearDraft,
                                 onSave = onSaveDraft,
                                 onCancel = onCancelDraft,
+                                gradeSystem = state.gradeSystem,
                             )
                         } else if (problem != null) {
-                            ProblemDetails(problem = problem)
+                            ProblemDetails(problem = problem, gradeSystem = state.gradeSystem)
                         }
                     }
                 }
@@ -155,7 +162,13 @@ fun BoardScreen(
                 contentPadding = PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                item { BoardHeader(problem = problem, isSetting = state.isSetting) }
+                item {
+                    BoardHeader(
+                        problem = problem,
+                        isSetting = state.isSetting,
+                        gradeSystem = state.gradeSystem,
+                    )
+                }
                 item {
                     BoardSurface(
                         activeHolds = activeHolds,
@@ -179,9 +192,10 @@ fun BoardScreen(
                             onClear = onClearDraft,
                             onSave = onSaveDraft,
                             onCancel = onCancelDraft,
+                            gradeSystem = state.gradeSystem,
                         )
                     } else if (problem != null) {
-                        ProblemDetails(problem = problem)
+                        ProblemDetails(problem = problem, gradeSystem = state.gradeSystem)
                     }
                 }
             }
@@ -190,7 +204,11 @@ fun BoardScreen(
 }
 
 @Composable
-private fun BoardHeader(problem: Problem?, isSetting: Boolean) {
+private fun BoardHeader(
+    problem: Problem?,
+    isSetting: Boolean,
+    gradeSystem: GradeSystem,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -213,7 +231,7 @@ private fun BoardHeader(problem: Problem?, isSetting: Boolean) {
         if (!isSetting && problem != null) {
             Surface(color = BoardDark, shape = RoundedCornerShape(8.dp)) {
                 Text(
-                    text = problem.grade,
+                    text = problem.grade.label(gradeSystem),
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     color = BoardPaper,
                     fontWeight = FontWeight.Bold,
@@ -224,7 +242,7 @@ private fun BoardHeader(problem: Problem?, isSetting: Boolean) {
 }
 
 @Composable
-private fun ProblemDetails(problem: Problem) {
+private fun ProblemDetails(problem: Problem, gradeSystem: GradeSystem) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
@@ -243,7 +261,7 @@ private fun ProblemDetails(problem: Problem) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(problem.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        "${problem.grade} · ${problem.holds.size} holds",
+                        "${problem.grade.label(gradeSystem)} · ${problem.holds.size} holds",
                         color = BoardMuted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -275,12 +293,13 @@ private fun SetterControls(
     selectedRole: HoldRole,
     onSelectRole: (HoldRole) -> Unit,
     onNameChange: (String) -> Unit,
-    onGradeChange: (String) -> Unit,
+    onGradeChange: (BoulderGrade) -> Unit,
     onAccentChange: (Accent) -> Unit,
     onNoteChange: (String) -> Unit,
     onClear: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    gradeSystem: GradeSystem,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -311,11 +330,11 @@ private fun SetterControls(
             )
             Text("Grade", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(BoardDefaults.grades) { grade ->
+                items(BoulderGrade.options(gradeSystem)) { grade ->
                     FilterChip(
-                        selected = draft.grade == grade,
+                        selected = draft.grade.label(gradeSystem) == grade.label(gradeSystem),
                         onClick = { onGradeChange(grade) },
-                        label = { Text(grade) },
+                        label = { Text(grade.label(gradeSystem)) },
                     )
                 }
             }
@@ -399,9 +418,9 @@ fun ProblemsScreen(
     onSelectProblem: (String) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    var grade by rememberSaveable { mutableStateOf("All") }
+    var grade by rememberSaveable(state.gradeSystem) { mutableStateOf("All") }
     val visibleProblems = state.problems.filter { problem ->
-        (grade == "All" || problem.grade == grade) &&
+        (grade == "All" || problem.grade.label(state.gradeSystem) == grade) &&
             problem.name.contains(query, ignoreCase = true)
     }
 
@@ -428,11 +447,18 @@ fun ProblemsScreen(
                 modifier = Modifier.padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                items(listOf("All") + BoardDefaults.grades) { item ->
+                item {
                     FilterChip(
-                        selected = grade == item,
-                        onClick = { grade = item },
-                        label = { Text(item) },
+                        selected = grade == "All",
+                        onClick = { grade = "All" },
+                        label = { Text("All") },
+                    )
+                }
+                items(BoulderGrade.options(state.gradeSystem)) { item ->
+                    FilterChip(
+                        selected = grade == item.label(state.gradeSystem),
+                        onClick = { grade = item.label(state.gradeSystem) },
+                        label = { Text(item.label(state.gradeSystem)) },
                     )
                 }
             }
@@ -461,7 +487,7 @@ fun ProblemsScreen(
                     }
                     Surface(color = BoardDark, shape = RoundedCornerShape(7.dp)) {
                         Text(
-                            problem.grade,
+                            problem.grade.label(state.gradeSystem),
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                             color = BoardPaper,
                             style = MaterialTheme.typography.labelMedium,
@@ -487,7 +513,11 @@ fun ProblemsScreen(
 }
 
 @Composable
-fun SetupScreen(contentPadding: PaddingValues) {
+fun SetupScreen(
+    contentPadding: PaddingValues,
+    gradeSystem: GradeSystem,
+    onGradeSystemChange: (GradeSystem) -> Unit,
+) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -523,6 +553,33 @@ fun SetupScreen(contentPadding: PaddingValues) {
                 SetupValue("Climbing height", "4.8 m")
                 HorizontalDivider(color = BoardLine)
                 SetupValue("Mapped holds", "43")
+            }
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BoardLine, RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Boulder grade system", fontWeight = FontWeight.Bold)
+                Text(
+                    "Choose how problem difficulties are shown across the app.",
+                    color = BoardMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GradeSystem.entries.forEach { system ->
+                        FilterChip(
+                            selected = gradeSystem == system,
+                            onClick = { onGradeSystemChange(system) },
+                            label = { Text(system.label) },
+                        )
+                    }
+                }
             }
         }
         item {

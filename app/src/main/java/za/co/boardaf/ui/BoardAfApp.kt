@@ -164,7 +164,11 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                         )
                     }
                     composable(Destination.SETUP.route) {
-                        SetupScreen(contentPadding = padding)
+                        SetupScreen(
+                            contentPadding = padding,
+                            gradeSystem = state.gradeSystem,
+                            onGradeSystemChange = viewModel::setGradeSystem,
+                        )
                     }
                 }
             }

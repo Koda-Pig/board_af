@@ -14,6 +14,49 @@ enum class Accent(val label: String) {
     MOSS("Moss"),
 }
 
+enum class GradeSystem(val label: String) {
+    FRENCH("French (Font)"),
+    V_SCALE("V scale"),
+}
+
+enum class BoulderGrade(
+    val frenchLabel: String,
+    val vLabel: String,
+) {
+    F4("4", "V0"),
+    F5("5", "V1"),
+    F5_PLUS("5+", "V2"),
+    F6A("6A", "V3"),
+    F6A_PLUS("6A+", "V3"),
+    F6B("6B", "V4"),
+    F6B_PLUS("6B+", "V4"),
+    F6C("6C", "V5"),
+    F6C_PLUS("6C+", "V5"),
+    F7A("7A", "V6"),
+    F7A_PLUS("7A+", "V7"),
+    F7B("7B", "V8"),
+    F7B_PLUS("7B+", "V8"),
+    ;
+
+    fun label(system: GradeSystem): String = when (system) {
+        GradeSystem.FRENCH -> frenchLabel
+        GradeSystem.V_SCALE -> vLabel
+    }
+
+    companion object {
+        fun options(system: GradeSystem): List<BoulderGrade> = when (system) {
+            GradeSystem.FRENCH -> entries
+            GradeSystem.V_SCALE -> entries.distinctBy { it.vLabel }
+        }
+
+        fun fromPersisted(value: String): BoulderGrade = entries.firstOrNull { grade ->
+            grade.name.equals(value, ignoreCase = true) ||
+                grade.frenchLabel.equals(value, ignoreCase = true) ||
+                grade.vLabel.equals(value, ignoreCase = true)
+        } ?: F6A
+    }
+}
+
 data class HoldDefinition(
     val id: String,
     val point: NormalizedPoint,
@@ -27,7 +70,7 @@ data class ProblemHold(
 data class Problem(
     val id: String,
     val name: String,
-    val grade: String,
+    val grade: BoulderGrade,
     val accent: Accent,
     val setter: String,
     val note: String,
@@ -36,7 +79,7 @@ data class Problem(
 
 data class DraftProblem(
     val name: String = "",
-    val grade: String = "V3",
+    val grade: BoulderGrade = BoulderGrade.F6A,
     val accent: Accent = Accent.SKY,
     val note: String = "",
     val holds: List<ProblemHold> = emptyList(),
@@ -49,8 +92,6 @@ data class DraftProblem(
 }
 
 object BoardDefaults {
-    val grades = (0..8).map { "V$it" }
-
     val holds = listOf(
         hold("h01", 154f, 81f), hold("h02", 405f, 77f), hold("h03", 598f, 75f), hold("h04", 801f, 74f),
         hold("h05", 114f, 238f), hold("h06", 306f, 209f), hold("h07", 649f, 234f), hold("h08", 751f, 233f), hold("h09", 845f, 280f),
@@ -69,7 +110,7 @@ object BoardDefaults {
         Problem(
             id = "tidepool",
             name = "Tidepool",
-            grade = "V4",
+            grade = BoulderGrade.F6B,
             accent = Accent.SKY,
             setter = "You",
             note = "Stay square through the middle, then commit to the blue finish.",
@@ -82,7 +123,7 @@ object BoardDefaults {
         Problem(
             id = "moss-line",
             name = "Moss line",
-            grade = "V2",
+            grade = BoulderGrade.F5_PLUS,
             accent = Accent.MOSS,
             setter = "You",
             note = "A relaxed green warm-up with a long final reach.",
@@ -95,7 +136,7 @@ object BoardDefaults {
         Problem(
             id = "chalk-ghost",
             name = "Chalk ghost",
-            grade = "V6",
+            grade = BoulderGrade.F7A,
             accent = Accent.CORAL,
             setter = "Maya",
             note = "Compression on the left panel. The h14 catch is the whole game.",
@@ -109,7 +150,7 @@ object BoardDefaults {
         Problem(
             id = "golden-hour",
             name = "Golden hour",
-            grade = "V3",
+            grade = BoulderGrade.F6A,
             accent = Accent.OCHRE,
             setter = "Jono",
             note = "Use the timber rail as a sidepull and keep your hips in.",
