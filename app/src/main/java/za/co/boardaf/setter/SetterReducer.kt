@@ -6,24 +6,42 @@ import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.ProblemAssignment
 import za.co.boardaf.model.ProblemHoldRole
 
+/**
+ * Retained only so v2 snapshots and cloud board docs keep round-tripping.
+ * The setter session itself always runs the guided wizard now.
+ */
 enum class SetterMode(val label: String) {
     GUIDED("Guided"),
     QUICK("Quick"),
 }
 
-enum class GuidedStep(val title: String, val hint: String) {
+enum class GuidedStep(
+    val title: String,
+    val hint: String,
+    /** Shown instead of the hint while this step blocks forward progress. */
+    val gateHint: String? = null,
+) {
     FEET_RULE("Feet rule", "Choose how feet work for the whole problem."),
-    START("Start holds", "Tap one or two start holds on the main board."),
-    FINISH("Finish holds", "Tap one or two finish holds."),
-    MOVEMENT("Regular and feet", "Fill in the line with regular holds and any foot-only marks."),
+    START(
+        "Start holds",
+        "Tap one or two start holds on the main board.",
+        "Mark one or two start holds to continue.",
+    ),
+    OTHER("Other holds", "Fill in the line between start and finish."),
+    FINISH(
+        "Finish holds",
+        "Tap one or two finish holds.",
+        "Mark one or two finish holds to continue.",
+    ),
+    DETAILS("Details & review", "Name it, grade it, then save or publish."),
     ;
 
     val roleForStep: ProblemHoldRole?
         get() = when (this) {
-            FEET_RULE -> null
+            FEET_RULE, DETAILS -> null
             START -> ProblemHoldRole.START
+            OTHER -> ProblemHoldRole.REGULAR
             FINISH -> ProblemHoldRole.FINISH
-            MOVEMENT -> ProblemHoldRole.REGULAR
         }
 }
 
@@ -37,9 +55,7 @@ data class TapRejection(
 data class SetterState(
     val draft: DraftProblem = DraftProblem(),
     val activeRole: ProblemHoldRole = ProblemHoldRole.START,
-    val mode: SetterMode = SetterMode.GUIDED,
     val guidedStep: GuidedStep = GuidedStep.FEET_RULE,
-    val isReviewing: Boolean = false,
     val undoStack: List<List<ProblemAssignment>> = emptyList(),
     val redoStack: List<List<ProblemAssignment>> = emptyList(),
 ) {
@@ -50,22 +66,36 @@ data class SetterState(
 data class TapResult(
     val state: SetterState,
     val rejection: TapRejection? = null,
+    /** Something changed that the setter didn't literally ask for; worth announcing. */
+    val notice: String? = null,
 )
 
-/** Pure assign/change/remove/undo/redo behavior for the setter session. */
+/** Pure assign/change/remove/undo/redo and wizard-step behavior for the setter session. */
 object SetterReducer {
     const val HISTORY_LIMIT = 50
 
-    fun start(draft: DraftProblem, mode: SetterMode): SetterState = SetterState(
-        draft = draft,
-        mode = mode,
-        activeRole = if (mode == SetterMode.GUIDED) {
-            ProblemHoldRole.START
-        } else {
-            ProblemHoldRole.REGULAR
-        },
-        guidedStep = GuidedStep.FEET_RULE,
-    )
+    /** The validator's bound on start and finish holds, enforced here at tap time. */
+    const val ROLE_CAP = 2
+
+    /** New drafts walk the wizard from the top; anything with content lands on review. */
+    fun start(draft: DraftProblem): SetterState {
+        val entry = if (draft.hasContent) GuidedStep.DETAILS else GuidedStep.FEET_RULE
+        return SetterState(
+            draft = draft,
+            guidedStep = entry,
+            activeRole = entry.roleForStep ?: ProblemHoldRole.START,
+        )
+    }
+
+    fun stepSatisfied(draft: DraftProblem, step: GuidedStep): Boolean = when (step) {
+        GuidedStep.FEET_RULE, GuidedStep.OTHER, GuidedStep.DETAILS -> true
+        GuidedStep.START -> draft.countFor(ProblemHoldRole.START) in 1..ROLE_CAP
+        GuidedStep.FINISH -> draft.countFor(ProblemHoldRole.FINISH) in 1..ROLE_CAP
+    }
+
+    /** First step whose requirement is unmet, or null once the whole line is set. */
+    fun firstUnsatisfiedStep(draft: DraftProblem): GuidedStep? =
+        GuidedStep.entries.firstOrNull { !stepSatisfied(draft, it) }
 
     fun tapHold(state: SetterState, holdId: String, board: ConfiguredBoard): TapResult {
         val role = state.activeRole
@@ -89,6 +119,7 @@ object SetterReducer {
                     role = role,
                     message = "$holdId is a foot-only ${hold.zone.label.lowercase()} hold — it can't be a ${role.label.lowercase()} hold.",
                     offerFootInstead = hold.capability.allowsFeet &&
+                        state.draft.feetRule.usesFootMarks &&
                         existing?.role != ProblemHoldRole.FOOT_ONLY,
                 ),
             )
@@ -105,14 +136,29 @@ object SetterReducer {
             )
         }
 
+        val capped = (role == ProblemHoldRole.START || role == ProblemHoldRole.FINISH) &&
+            state.draft.countFor(role) >= ROLE_CAP
+        if (capped) {
+            return TapResult(
+                state,
+                TapRejection(
+                    holdId = holdId,
+                    role = role,
+                    message = "Two ${role.label.lowercase()} holds max — tap a marked one to remove it first.",
+                    offerFootInstead = false,
+                ),
+            )
+        }
+
         return TapResult(
-            withHistory(state) { assignments ->
+            state = withHistory(state) { assignments ->
                 if (existing != null) {
                     assignments.map { if (it.holdId == holdId) it.copy(role = role) else it }
                 } else {
                     assignments + ProblemAssignment(holdId, role)
                 }
             },
+            notice = existing?.let { "$holdId changed from ${it.role.label} to ${role.label}." },
         )
     }
 
@@ -150,24 +196,34 @@ object SetterReducer {
     fun selectRole(state: SetterState, role: ProblemHoldRole): SetterState =
         state.copy(activeRole = role)
 
-    fun setFeetRule(state: SetterState, feetRule: FeetRule): SetterState =
-        state.copy(draft = state.draft.copy(feetRule = feetRule))
-
-    fun setMode(state: SetterState, mode: SetterMode): SetterState =
-        if (mode == state.mode) {
-            state
+    /** Campus has no feet: switching to it drops existing foot marks (undoable). */
+    fun setFeetRule(state: SetterState, feetRule: FeetRule): SetterState {
+        val next = state.copy(
+            draft = state.draft.copy(feetRule = feetRule),
+            activeRole = if (state.activeRole == ProblemHoldRole.FOOT_ONLY && !feetRule.usesFootMarks) {
+                ProblemHoldRole.REGULAR
+            } else {
+                state.activeRole
+            },
+        )
+        val hasFootMarks = next.draft.assignments.any { it.role == ProblemHoldRole.FOOT_ONLY }
+        return if (feetRule == FeetRule.CAMPUS && hasFootMarks) {
+            withHistory(next) { assignments -> assignments.filterNot { it.role == ProblemHoldRole.FOOT_ONLY } }
         } else {
-            state.copy(
-                mode = mode,
-                guidedStep = GuidedStep.FEET_RULE,
-                activeRole = if (mode == SetterMode.GUIDED) ProblemHoldRole.START else state.activeRole,
-            )
+            next
         }
+    }
 
-    fun goToStep(state: SetterState, step: GuidedStep): SetterState = state.copy(
-        guidedStep = step,
-        activeRole = step.roleForStep ?: state.activeRole,
-    )
+    /** Backward jumps are always free; forward jumps stop at the first unsatisfied step. */
+    fun goToStep(state: SetterState, step: GuidedStep): SetterState {
+        val forward = step.ordinal > state.guidedStep.ordinal
+        val reachable = firstUnsatisfiedStep(state.draft) ?: GuidedStep.entries.last()
+        if (forward && step.ordinal > reachable.ordinal) return state
+        return state.copy(
+            guidedStep = step,
+            activeRole = step.roleForStep ?: state.activeRole,
+        )
+    }
 
     fun nextStep(state: SetterState): SetterState {
         val next = GuidedStep.entries.getOrNull(state.guidedStep.ordinal + 1) ?: return state

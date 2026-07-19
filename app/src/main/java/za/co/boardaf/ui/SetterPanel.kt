@@ -56,37 +56,26 @@ import za.co.boardaf.model.ProblemTags
 import za.co.boardaf.model.ProblemValidator
 import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.GuidedStep
-import za.co.boardaf.setter.SetterMode
+import za.co.boardaf.setter.SetterReducer
 import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardLine
 import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Moss
 
+/**
+ * The setter wizard: feet rule → start holds → other holds → finish holds →
+ * details & review. Forward progress is gated per step; backward is always free.
+ */
 @Composable
 fun SetterPanel(
     state: BoardUiState,
     actions: BoardActions,
     modifier: Modifier = Modifier,
 ) {
-    if (state.setter.isReviewing) {
-        ReviewPane(state = state, actions = actions, modifier = modifier)
-    } else {
-        EditPane(state = state, actions = actions, modifier = modifier)
-    }
-}
-
-@Composable
-private fun EditPane(
-    state: BoardUiState,
-    actions: BoardActions,
-    modifier: Modifier = Modifier,
-) {
     val setter = state.setter
     val draft = setter.draft
-    val issues = state.draftIssues
-    val errorCount = issues.count { it.severity == IssueSeverity.ERROR }
-    val warningCount = issues.size - errorCount
+    val step = setter.guidedStep
     var confirmClear by rememberSaveable { mutableStateOf(false) }
 
     Card(
@@ -120,179 +109,23 @@ private fun EditPane(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                SetterMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = setter.mode == mode,
-                        onClick = { actions.onSetSetterMode(mode) },
-                        label = { Text(mode.label) },
-                    )
-                }
-            }
+            WizardStepper(state = state, actions = actions)
 
-            if (setter.mode == SetterMode.GUIDED) {
-                GuidedStepper(state = state, actions = actions)
-            }
-
-            FeetRuleBanner(
-                feetRule = draft.feetRule,
-                footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
-            )
-
-            if (setter.mode == SetterMode.QUICK || setter.guidedStep == GuidedStep.FEET_RULE) {
-                Text("Feet rule", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    items(availableFeetRules(state)) { rule ->
-                        FilterChip(
-                            selected = draft.feetRule == rule,
-                            onClick = { actions.onSetFeetRule(rule) },
-                            label = { Text(rule.label) },
-                        )
-                    }
-                }
-            }
-
-            val paletteRoles = when {
-                setter.mode == SetterMode.QUICK -> ProblemHoldRole.entries.toList()
-                setter.guidedStep == GuidedStep.START -> listOf(ProblemHoldRole.START)
-                setter.guidedStep == GuidedStep.FINISH -> listOf(ProblemHoldRole.FINISH)
-                setter.guidedStep == GuidedStep.MOVEMENT ->
-                    listOf(ProblemHoldRole.REGULAR, ProblemHoldRole.FOOT_ONLY)
-                else -> emptyList()
-            }
-            if (paletteRoles.isNotEmpty()) {
-                Text("Tap role, then tap holds", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    items(paletteRoles) { role ->
-                        FilterChip(
-                            selected = setter.activeRole == role,
-                            onClick = { actions.onSelectRole(role) },
-                            label = { Text("${role.label} · ${draft.countFor(role)}") },
-                            leadingIcon = { ProblemMarker(role = role, size = 18.dp) },
-                        )
-                    }
-                }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
-                    Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
-                }
-                IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
-                    Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
-                }
-                IconButton(
-                    onClick = {
-                        if (draft.assignments.isEmpty()) Unit else confirmClear = true
-                    },
-                    enabled = draft.assignments.isNotEmpty(),
-                ) {
-                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear all holds")
-                }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = "${draft.assignments.size} holds",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = BoardMuted,
+            if (step != GuidedStep.FEET_RULE) {
+                FeetRuleBanner(
+                    feetRule = draft.feetRule,
+                    footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
                 )
             }
 
-            if (errorCount > 0 || warningCount > 0) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = listOfNotNull(
-                                "$errorCount to fix".takeIf { errorCount > 0 },
-                                "$warningCount warning(s)".takeIf { warningCount > 0 },
-                            ).joinToString(" · "),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (errorCount > 0) Coral else BoardMuted,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = { actions.onSetReviewing(true) }) {
-                            Text("Review")
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = BoardLine)
-
-            OutlinedTextField(
-                value = draft.name,
-                onValueChange = actions.onDraftNameChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Problem name") },
-                singleLine = true,
-            )
-            Text("Grade · setter estimate", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(BoulderGrade.options(state.gradeSystem)) { grade ->
-                    FilterChip(
-                        selected = draft.grade.label(state.gradeSystem) == grade.label(state.gradeSystem),
-                        onClick = { actions.onDraftGradeChange(grade) },
-                        label = { Text(grade.label(state.gradeSystem)) },
-                    )
-                }
-            }
-            Text("Accent color", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(Accent.entries) { accent ->
-                    FilterChip(
-                        selected = draft.accent == accent,
-                        onClick = { actions.onDraftAccentChange(accent) },
-                        label = { Text(accent.label) },
-                        leadingIcon = {
-                            Box(Modifier.size(8.dp).background(accent.color(), CircleShape))
-                        },
-                    )
-                }
-            }
-            Text("Tags", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(ProblemTags.suggestions) { tag ->
-                    FilterChip(
-                        selected = tag in draft.tags,
-                        onClick = { actions.onToggleDraftTag(tag) },
-                        label = { Text(tag) },
-                    )
-                }
-            }
-            OutlinedTextField(
-                value = draft.note,
-                onValueChange = actions.onDraftNoteChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Setter notes") },
-                minLines = 2,
-                maxLines = 4,
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = actions.onSaveDraftAndClose,
-                    enabled = draft.hasContent,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Save draft")
-                }
-                Button(
-                    onClick = { actions.onSetReviewing(true) },
-                    modifier = Modifier.weight(1.4f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = BoardDark),
-                ) {
-                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("Review & publish", maxLines = 1)
-                }
+            when (step) {
+                GuidedStep.FEET_RULE -> FeetRuleStep(state = state, actions = actions)
+                GuidedStep.START, GuidedStep.OTHER, GuidedStep.FINISH -> HoldStep(
+                    state = state,
+                    actions = actions,
+                    onClearRequested = { confirmClear = true },
+                )
+                GuidedStep.DETAILS -> DetailsStep(state = state, actions = actions)
             }
         }
     }
@@ -301,7 +134,7 @@ private fun EditPane(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Clear all holds?") },
-            text = { Text("This removes all ${state.setter.draft.assignments.size} hold assignments from the draft. You can undo afterwards.") },
+            text = { Text("This removes all ${draft.assignments.size} hold assignments from the draft. You can undo afterwards.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -318,116 +151,227 @@ private fun EditPane(
 }
 
 @Composable
-private fun GuidedStepper(state: BoardUiState, actions: BoardActions) {
+private fun WizardStepper(state: BoardUiState, actions: BoardActions) {
     val setter = state.setter
+    val draft = setter.draft
+    val current = setter.guidedStep
+    val blocking = SetterReducer.firstUnsatisfiedStep(draft)
+    val reachableOrdinal = blocking?.ordinal ?: GuidedStep.entries.lastIndex
+    val nextEnabled = blocking == null || blocking.ordinal > current.ordinal
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(GuidedStep.entries) { step ->
                 FilterChip(
-                    selected = setter.guidedStep == step,
+                    selected = current == step,
+                    enabled = step.ordinal <= current.ordinal || step.ordinal <= reachableOrdinal,
                     onClick = { actions.onGoToGuidedStep(step) },
                     label = { Text("${step.ordinal + 1} · ${step.title}") },
+                    leadingIcon = if (step.gateHint != null && SetterReducer.stepSatisfied(draft, step)) {
+                        {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = "${step.title} done",
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = setter.guidedStep.hint,
+                text = if (nextEnabled) current.hint else blocking.gateHint.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
-                color = BoardMuted,
+                color = if (nextEnabled) BoardMuted else Coral,
                 modifier = Modifier.weight(1f),
             )
             TextButton(
                 onClick = actions.onGuidedBack,
-                enabled = setter.guidedStep.ordinal > 0,
+                enabled = current.ordinal > 0,
             ) { Text("Back") }
-            TextButton(
-                onClick = actions.onGuidedNext,
-                enabled = setter.guidedStep.ordinal < GuidedStep.entries.lastIndex,
-            ) { Text("Next") }
+            if (current != GuidedStep.DETAILS) {
+                TextButton(
+                    onClick = actions.onGuidedNext,
+                    enabled = nextEnabled,
+                ) { Text("Next") }
+            }
         }
     }
 }
 
 @Composable
-private fun ReviewPane(
+private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
+    val draft = state.setter.draft
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(availableFeetRules(state)) { rule ->
+                FilterChip(
+                    selected = draft.feetRule == rule,
+                    onClick = { actions.onSetFeetRule(rule) },
+                    label = { Text(rule.label) },
+                )
+            }
+        }
+        Text(
+            text = draft.feetRule.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = BoardMuted,
+        )
+    }
+}
+
+@Composable
+private fun HoldStep(
     state: BoardUiState,
     actions: BoardActions,
-    modifier: Modifier = Modifier,
+    onClearRequested: () -> Unit,
 ) {
+    val setter = state.setter
+    val draft = setter.draft
+    val paletteRoles = when (setter.guidedStep) {
+        GuidedStep.START -> listOf(ProblemHoldRole.START)
+        GuidedStep.FINISH -> listOf(ProblemHoldRole.FINISH)
+        else -> if (draft.feetRule.usesFootMarks) {
+            listOf(ProblemHoldRole.REGULAR, ProblemHoldRole.FOOT_ONLY)
+        } else {
+            listOf(ProblemHoldRole.REGULAR)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (paletteRoles.size > 1) {
+            Text("Tap role, then tap holds", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(paletteRoles) { role ->
+                FilterChip(
+                    selected = setter.activeRole == role,
+                    onClick = { actions.onSelectRole(role) },
+                    label = { Text("${role.label} · ${draft.countFor(role)}") },
+                    leadingIcon = { ProblemMarker(role = role, size = 18.dp) },
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
+                Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
+            }
+            IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
+                Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
+            }
+            IconButton(
+                onClick = onClearRequested,
+                enabled = draft.assignments.isNotEmpty(),
+            ) {
+                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear all holds")
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "${draft.assignments.size} holds",
+                style = MaterialTheme.typography.labelMedium,
+                color = BoardMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
     val issues = state.draftIssues
     val errors = issues.filter { it.severity == IssueSeverity.ERROR }
     val warnings = issues.filter { it.severity == IssueSeverity.WARNING }
     var confirmForerun by rememberSaveable { mutableStateOf(false) }
 
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "REVIEW",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = BoardMuted,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = draft.name.ifBlank { "Unnamed problem" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                IconButton(onClick = { actions.onSetReviewing(false) }) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Back to editing")
-                }
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
 
-            FeetRuleBanner(
-                feetRule = draft.feetRule,
-                footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
-            )
-            StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
+        HorizontalDivider(color = BoardLine)
 
-            if (errors.isEmpty()) {
-                Surface(color = Moss.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
-                    Text(
-                        text = "Everything checks out. Publishing still needs a successful forerun.",
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            } else {
-                IssueGroup(title = "Fix before publishing", issues = errors, tint = Coral)
+        OutlinedTextField(
+            value = draft.name,
+            onValueChange = actions.onDraftNameChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Problem name") },
+            singleLine = true,
+        )
+        Text("Grade · setter estimate", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(BoulderGrade.options(state.gradeSystem)) { grade ->
+                FilterChip(
+                    selected = draft.grade.label(state.gradeSystem) == grade.label(state.gradeSystem),
+                    onClick = { actions.onDraftGradeChange(grade) },
+                    label = { Text(grade.label(state.gradeSystem)) },
+                )
             }
-            if (warnings.isNotEmpty()) {
-                IssueGroup(title = "Worth a look", issues = warnings, tint = BoardMuted)
+        }
+        Text("Accent color", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(Accent.entries) { accent ->
+                FilterChip(
+                    selected = draft.accent == accent,
+                    onClick = { actions.onDraftAccentChange(accent) },
+                    label = { Text(accent.label) },
+                    leadingIcon = {
+                        Box(Modifier.size(8.dp).background(accent.color(), CircleShape))
+                    },
+                )
             }
+        }
+        Text("Tags", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            items(ProblemTags.suggestions) { tag ->
+                FilterChip(
+                    selected = tag in draft.tags,
+                    onClick = { actions.onToggleDraftTag(tag) },
+                    label = { Text(tag) },
+                )
+            }
+        }
+        OutlinedTextField(
+            value = draft.note,
+            onValueChange = actions.onDraftNoteChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Setter notes") },
+            minLines = 2,
+            maxLines = 4,
+        )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = actions.onSaveDraftAndClose,
-                    enabled = draft.hasContent,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(if (draft.baseState == PublicationState.PUBLISHED || draft.baseState == PublicationState.BENCHMARK) "Save" else "Save draft")
-                }
-                Button(
-                    onClick = { confirmForerun = true },
-                    enabled = !ProblemValidator.hasErrors(issues),
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = BoardDark),
-                ) {
-                    Text("Publish…")
-                }
+        if (errors.isEmpty()) {
+            Surface(color = Moss.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
+                Text(
+                    text = "Everything checks out. Publishing still needs a successful forerun.",
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        } else {
+            IssueGroup(title = "Fix before publishing", issues = errors, tint = Coral)
+        }
+        if (warnings.isNotEmpty()) {
+            IssueGroup(title = "Worth a look", issues = warnings, tint = BoardMuted)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = actions.onSaveDraftAndClose,
+                enabled = draft.hasContent,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (draft.baseState == PublicationState.PUBLISHED || draft.baseState == PublicationState.BENCHMARK) "Save" else "Save draft")
+            }
+            Button(
+                onClick = { confirmForerun = true },
+                enabled = !ProblemValidator.hasErrors(issues),
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = BoardDark),
+            ) {
+                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Publish…", maxLines = 1)
             }
         }
     }

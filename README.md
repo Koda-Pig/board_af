@@ -72,3 +72,18 @@ phone, tablet, and large-screen widths.
 - `app/` — Android application source, resources, and tests
 - `gradle/` and Gradle wrapper files — reproducible Android builds
 - `docs/` — project plans and product research
+
+## Setting flow
+
+Creating, editing, or duplicating a problem runs a five-step wizard on the
+board screen: **feet rule → start holds → other holds → finish holds →
+details & review**. New problems start at the feet rule; sessions on existing
+problems land directly on details & review and can jump back to any step.
+
+Forward progress is gated per step (one or two start holds, one or two finish
+holds); backward navigation and the system back button walk the steps freely.
+Taps are guarded: a third start or finish hold is rejected, changing a hold's
+existing role is announced in a snackbar, and switching to Campus removes
+foot marks undoably. The foot-only palette only appears under feet rules
+where marks mean something. Drafts autosave on every action, and publishing
+still requires zero validation errors plus a forerun confirmation.

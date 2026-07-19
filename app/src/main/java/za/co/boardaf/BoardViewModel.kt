@@ -199,7 +199,7 @@ class BoardViewModel @JvmOverloads constructor(
         val current = mutableState.value
         mutableState.value = current.copy(
             isSetting = true,
-            setter = SetterReducer.start(DraftProblem(), current.setterMode),
+            setter = SetterReducer.start(DraftProblem()),
         )
     }
 
@@ -209,7 +209,7 @@ class BoardViewModel @JvmOverloads constructor(
         mutableState.value = current.copy(
             isSetting = true,
             selectedProblemId = problemId,
-            setter = SetterReducer.start(DraftProblem.fromProblem(problem), current.setterMode),
+            setter = SetterReducer.start(DraftProblem.fromProblem(problem)),
         )
     }
 
@@ -218,7 +218,7 @@ class BoardViewModel @JvmOverloads constructor(
         val problem = current.problems.firstOrNull { it.id == problemId } ?: return
         mutableState.value = current.copy(
             isSetting = true,
-            setter = SetterReducer.start(DraftProblem.duplicateOf(problem), current.setterMode),
+            setter = SetterReducer.start(DraftProblem.duplicateOf(problem)),
         )
         autosaveDraft()
     }
@@ -236,6 +236,7 @@ class BoardViewModel @JvmOverloads constructor(
         val result = SetterReducer.tapHold(current.setter, holdId, current.board)
         mutableState.value = current.copy(setter = result.state)
         result.rejection?.let { emit(BoardEvent.TapRejected(it)) }
+        result.notice?.let { emit(BoardEvent.Message(it)) }
         if (result.rejection == null) autosaveDraft()
     }
 
@@ -262,7 +263,12 @@ class BoardViewModel @JvmOverloads constructor(
     fun selectRole(role: ProblemHoldRole) = updateSetter { SetterReducer.selectRole(it, role) }
 
     fun setFeetRule(feetRule: FeetRule) {
+        val before = mutableState.value.setter.draft.countFor(ProblemHoldRole.FOOT_ONLY)
         updateSetter { SetterReducer.setFeetRule(it, feetRule) }
+        val removed = before - mutableState.value.setter.draft.countFor(ProblemHoldRole.FOOT_ONLY)
+        if (removed > 0) {
+            emit(BoardEvent.Message("Removed $removed foot mark(s) — campus problems have no feet. Undo restores them."))
+        }
         autosaveDraft()
     }
 
@@ -295,22 +301,11 @@ class BoardViewModel @JvmOverloads constructor(
         autosaveDraft()
     }
 
-    fun setSetterMode(mode: SetterMode) {
-        val current = mutableState.value
-        mutableState.value = current.copy(
-            setterMode = mode,
-            setter = SetterReducer.setMode(current.setter, mode),
-        )
-        persist()
-    }
-
     fun guidedNext() = updateSetter { SetterReducer.nextStep(it) }
 
     fun guidedBack() = updateSetter { SetterReducer.previousStep(it) }
 
     fun goToGuidedStep(step: GuidedStep) = updateSetter { SetterReducer.goToStep(it, step) }
-
-    fun setReviewing(reviewing: Boolean) = updateSetter { it.copy(isReviewing = reviewing) }
 
     /** Save whatever is on the wall as a draft (or its previous state) and close the setter. */
     fun saveDraftAndClose() {

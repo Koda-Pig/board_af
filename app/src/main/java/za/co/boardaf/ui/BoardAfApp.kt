@@ -49,7 +49,6 @@ import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.setter.GuidedStep
-import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardPaper
 import za.co.boardaf.ui.theme.Coral
@@ -75,11 +74,9 @@ data class BoardActions(
     val onDraftAccentChange: (Accent) -> Unit = {},
     val onDraftNoteChange: (String) -> Unit = {},
     val onToggleDraftTag: (String) -> Unit = {},
-    val onSetSetterMode: (SetterMode) -> Unit = {},
     val onGuidedNext: () -> Unit = {},
     val onGuidedBack: () -> Unit = {},
     val onGoToGuidedStep: (GuidedStep) -> Unit = {},
-    val onSetReviewing: (Boolean) -> Unit = {},
     val onArchiveProblem: (String) -> Unit = {},
     val onUnarchiveProblem: (String) -> Unit = {},
     val onToggleBenchmark: (String) -> Unit = {},
@@ -138,11 +135,9 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onDraftAccentChange = viewModel::setDraftAccent,
             onDraftNoteChange = viewModel::setDraftNote,
             onToggleDraftTag = viewModel::toggleDraftTag,
-            onSetSetterMode = viewModel::setSetterMode,
             onGuidedNext = viewModel::guidedNext,
             onGuidedBack = viewModel::guidedBack,
             onGoToGuidedStep = viewModel::goToGuidedStep,
-            onSetReviewing = viewModel::setReviewing,
             onArchiveProblem = viewModel::archiveProblem,
             onUnarchiveProblem = viewModel::unarchiveProblem,
             onToggleBenchmark = viewModel::toggleBenchmark,
@@ -179,8 +174,14 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         }
     }
 
+    // Back walks the wizard one step; from the first step it closes the session
+    // (the draft is autosaved on every action, so nothing is lost).
     BackHandler(enabled = state.isSetting) {
-        viewModel.cancelSetting()
+        if (state.setter.guidedStep.ordinal > 0) {
+            viewModel.guidedBack()
+        } else {
+            viewModel.cancelSetting()
+        }
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = BoardPaper) {

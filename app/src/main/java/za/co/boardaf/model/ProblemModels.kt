@@ -14,6 +14,11 @@ enum class FeetRule(val label: String, val description: String) {
     FEET_FOLLOW_MARKED("Feet follow marked", "Feet only on the marked hand holds — start, regular and finish."),
     ANY_FEET("Any feet", "Feet anywhere on the wall."),
     CAMPUS("Campus", "No feet at all."),
+    ;
+
+    /** Whether foot-only marks mean anything under this rule. */
+    val usesFootMarks: Boolean
+        get() = this == MARKED_ONLY || this == OPEN_KICKBOARD
 }
 
 enum class StartRule(val label: String, val description: String) {
