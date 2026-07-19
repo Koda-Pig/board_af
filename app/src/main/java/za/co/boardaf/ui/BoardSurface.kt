@@ -92,7 +92,7 @@ fun BoardSurface(
     BoxWithConstraints(
         modifier = modifier
             .shadow(12.dp, RoundedCornerShape(18.dp))
-            .background(Color(0xFF222622), RoundedCornerShape(18.dp))
+            .background(Color(0xFF273338), RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp)),
     ) {
         val containerSize = PixelSize(
@@ -197,7 +197,7 @@ fun BoardSurface(
 
             if (!transform.isIdentity) {
                 Surface(
-                    color = Color(0xB3191C19),
+                    color = Color(0xB3273338),
                     shape = CircleShape,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -295,7 +295,7 @@ private fun HoldTarget(
 private fun UnassignedHint(capability: HoldCapability) {
     Canvas(modifier = Modifier.size(26.dp)) {
         drawCircle(
-            color = Color(0x55191C19),
+            color = Color(0x55273338),
             radius = size.minDimension / 2 - 4.dp.toPx(),
         )
         when (capability) {

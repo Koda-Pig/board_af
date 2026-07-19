@@ -36,6 +36,7 @@ import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardLine
 import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.Coral
+import za.co.boardaf.ui.theme.Forest
 import java.text.DateFormat
 import java.util.Date
 
@@ -123,7 +124,7 @@ private fun SignInForm(cloud: CloudSyncState, actions: BoardActions) {
             Text("Create account")
         }
         if (cloud.isAuthBusy) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Coral)
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
         }
     }
 }

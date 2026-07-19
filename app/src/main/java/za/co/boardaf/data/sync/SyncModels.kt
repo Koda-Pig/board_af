@@ -39,9 +39,9 @@ data class RemoteLibrary(
 )
 
 /**
- * Last content both sides agreed on, per record. A record is only marked
- * synchronized (baseline advanced) once the server has acknowledged it,
- * which is the doc's write-and-read-back verification.
+ * Last server-acknowledged content, per record. A completed plan includes the
+ * content it pushed; callers must persist these baselines only after the remote
+ * write succeeds.
  */
 data class SyncBaselines(
     val board: String? = null,

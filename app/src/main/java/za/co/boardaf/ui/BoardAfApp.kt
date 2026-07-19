@@ -58,7 +58,8 @@ import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.setter.GuidedStep
 import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardPaper
-import za.co.boardaf.ui.theme.Coral
+import za.co.boardaf.ui.theme.Forest
+import za.co.boardaf.ui.theme.Sage
 
 /** All screen callbacks in one place so screens and previews stay lightweight. */
 data class BoardActions(
@@ -238,7 +239,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = BoardDark,
                         titleContentColor = BoardPaper,
-                        actionIconContentColor = Coral,
+                        actionIconContentColor = Sage,
                     ),
                 )
             },
@@ -264,8 +265,8 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                             label = { Text(destination.label) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = BoardDark,
-                                selectedTextColor = Coral,
-                                indicatorColor = Coral,
+                                selectedTextColor = Sage,
+                                indicatorColor = Sage,
                                 unselectedIconColor = BoardPaper.copy(alpha = 0.58f),
                                 unselectedTextColor = BoardPaper.copy(alpha = 0.58f),
                             ),
@@ -277,7 +278,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             Box(modifier = Modifier.fillMaxSize()) {
                 if (state.isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Coral)
+                        CircularProgressIndicator(color = Forest)
                     }
                 } else {
                     NavHost(

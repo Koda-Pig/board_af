@@ -10,8 +10,9 @@ import za.co.boardaf.model.Problem
  * Data-safety rules, mirroring the local store's contract:
  * - Never silently drop the losing side of a conflict: the remote version keeps
  *   the original ID and the local version is preserved as a pushed conflict copy.
- * - A record's baseline only advances when local and server-acknowledged remote
- *   content are identical; pending (unacknowledged) remote writes are skipped.
+ * - A record's baseline advances when local and server-acknowledged remote
+ *   content are identical, or to the content of a push that the caller will
+ *   persist only after Firebase acknowledges it. Pending remote writes are skipped.
  * - Remote docs that failed to decode are never overwritten by pushes.
  * - A remote deletion of a record this device has synced before is treated as
  *   data loss and repaired by re-pushing the local copy.
@@ -160,6 +161,21 @@ object SyncPlanner {
                 changedLocally = true
                 issues += "Board setup was changed on two devices; the other device's setup was kept."
             }
+        }
+
+        // These baselines describe the state after the plan has been executed.
+        // FirestoreCloudSync persists them only after batch.commit().await(), so a
+        // subsequent local edit can compare against the exact payload Firebase
+        // acknowledged instead of mistaking the edit for a cross-device conflict.
+        pushes.forEach { push ->
+            newBaselines[push.problem.id] = SyncCodec.encodeProblem(push.problem)
+        }
+        boardPush?.let { push ->
+            boardBaseline = SyncCodec.encodeBoard(
+                push.setup,
+                push.gradeSystem,
+                push.setterMode,
+            )
         }
 
         val mergedSnapshot = if (changedLocally) {

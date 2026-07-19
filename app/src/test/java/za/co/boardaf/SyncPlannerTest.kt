@@ -81,6 +81,34 @@ class SyncPlannerTest {
     }
 
     @Test
+    fun `local edit after acknowledged first push is not a conflict`() {
+        val firstSaved = problem("uppity-1", name = "uppit")
+        val firstPlan = SyncPlanner.plan(
+            snapshot(firstSaved),
+            RemoteLibrary(),
+            SyncBaselines(),
+            now,
+        )
+
+        val latestLocal = firstSaved.copy(name = "uppity")
+        val acknowledgedFirstPush = RemoteLibrary(
+            board = remoteBoard(snapshot(firstSaved)),
+            problems = mapOf(firstSaved.id to remoteRecord(firstSaved, revision = 1)),
+        )
+        val secondPlan = SyncPlanner.plan(
+            snapshot(latestLocal),
+            acknowledgedFirstPush,
+            firstPlan.baselines,
+            now + 1,
+        )
+
+        assertNull(secondPlan.mergedSnapshot)
+        assertEquals(listOf(latestLocal), secondPlan.problemPushes.map { it.problem })
+        assertEquals(2L, secondPlan.problemPushes.single().revision)
+        assertTrue(secondPlan.issues.isEmpty())
+    }
+
+    @Test
     fun `identical local and remote content advances baselines and does nothing else`() {
         val local = snapshot(problem("a"))
         val remote = mirroredRemote(local)

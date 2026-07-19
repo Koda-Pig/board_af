@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.BoardUiState
@@ -57,11 +58,11 @@ import za.co.boardaf.model.ProblemValidator
 import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.GuidedStep
 import za.co.boardaf.setter.SetterReducer
-import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardLine
 import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.Coral
-import za.co.boardaf.ui.theme.Moss
+import za.co.boardaf.ui.theme.Forest
+import za.co.boardaf.ui.theme.Sage
 
 /**
  * The setter wizard: feet rule → start holds → other holds → finish holds →
@@ -341,7 +342,7 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
         )
 
         if (errors.isEmpty()) {
-            Surface(color = Moss.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
+            Surface(color = Sage.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
                 Text(
                     text = "Everything checks out. Publishing still needs a successful forerun.",
                     modifier = Modifier.padding(12.dp),
@@ -367,7 +368,7 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
                 onClick = { confirmForerun = true },
                 enabled = !ProblemValidator.hasErrors(issues),
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = BoardDark),
+                colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
             ) {
                 Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(5.dp))
