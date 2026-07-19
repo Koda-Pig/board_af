@@ -2,7 +2,11 @@ package za.co.boardaf.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
@@ -35,12 +39,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import za.co.boardaf.R
 import za.co.boardaf.BoardEvent
 import za.co.boardaf.BoardViewModel
 import za.co.boardaf.model.Accent
@@ -191,14 +198,26 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = if (currentDestination == Destination.BOARD && state.isSetting) {
-                                "Set a problem"
-                            } else {
-                                "BOARD AF  ·  ${currentDestination.label}"
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                        )
+                        if (currentDestination == Destination.BOARD && state.isSetting) {
+                            Text(
+                                text = "Set a problem",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_logo_crimp),
+                                    contentDescription = "Board AF",
+                                    modifier = Modifier.size(34.dp),
+                                    tint = BoardPaper,
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = currentDestination.label,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            }
+                        }
                     },
                     actions = {
                         if (currentDestination == Destination.BOARD || currentDestination == Destination.PROBLEMS) {
