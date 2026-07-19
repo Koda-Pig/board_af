@@ -264,15 +264,25 @@ private fun ProblemDetails(
             }
 
             if (problem.publicationState == PublicationState.NEEDS_REVIEW) {
+                val repairErrors = issues.filter { it.severity == IssueSeverity.ERROR }
                 Surface(color = Coral.copy(alpha = 0.14f), shape = RoundedCornerShape(10.dp)) {
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "This problem needs repair before it can be published again:",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        issues.filter { it.severity == IssueSeverity.ERROR }.forEach {
-                            Text("• ${it.message}", style = MaterialTheme.typography.bodySmall, color = BoardMuted)
+                        if (repairErrors.isEmpty()) {
+                            // A past board change demoted it; the data is valid again.
+                            Text(
+                                text = "The board changed while this was published. Confirm it still climbs as set, then publish again.",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        } else {
+                            Text(
+                                text = "This problem needs repair before it can be published again:",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            repairErrors.forEach {
+                                Text("• ${it.message}", style = MaterialTheme.typography.bodySmall, color = BoardMuted)
+                            }
                         }
                     }
                 }

@@ -19,6 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Card
@@ -32,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +65,7 @@ fun ProblemsScreen(
     onEditProblem: (String) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    var filtersExpanded by rememberSaveable { mutableStateOf(false) }
     var statusFilter by rememberSaveable { mutableStateOf(ALL) }
     var gradeFilter by rememberSaveable(state.gradeSystem) { mutableStateOf(ALL) }
     var feetFilter by rememberSaveable { mutableStateOf(ALL) }
@@ -109,47 +114,72 @@ fun ProblemsScreen(
             )
         }
         item {
-            FilterRow(
-                title = "Status",
-                options = listOf(ALL) + PublicationState.entries.map { it.label },
-                selected = statusFilter,
-                onSelect = { statusFilter = it },
-            )
-        }
-        item {
-            FilterRow(
-                title = "Grade",
-                options = listOf(ALL) + BoulderGrade.options(state.gradeSystem).map { it.label(state.gradeSystem) },
-                selected = gradeFilter,
-                onSelect = { gradeFilter = it },
-            )
-        }
-        item {
-            FilterRow(
-                title = "Feet rule",
-                options = listOf(ALL) + FeetRule.entries.map { it.label },
-                selected = feetFilter,
-                onSelect = { feetFilter = it },
-            )
-        }
-        if (setters.size > 1) {
-            item {
-                FilterRow(
-                    title = "Setter",
-                    options = listOf(ALL) + setters,
-                    selected = setterFilter,
-                    onSelect = { setterFilter = it },
+            TextButton(
+                onClick = {
+                    // A hidden panel must never silently narrow the list.
+                    if (filtersExpanded) {
+                        statusFilter = ALL
+                        gradeFilter = ALL
+                        feetFilter = ALL
+                        setterFilter = ALL
+                        tagFilter = ALL
+                    }
+                    filtersExpanded = !filtersExpanded
+                },
+            ) {
+                Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (filtersExpanded) "Hide filters" else "Filters")
+                Icon(
+                    if (filtersExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
                 )
             }
         }
-        if (tags.isNotEmpty()) {
+        if (filtersExpanded) {
             item {
                 FilterRow(
-                    title = "Tag",
-                    options = listOf(ALL) + tags,
-                    selected = tagFilter,
-                    onSelect = { tagFilter = it },
+                    title = "Status",
+                    options = listOf(ALL) + PublicationState.entries.map { it.label },
+                    selected = statusFilter,
+                    onSelect = { statusFilter = it },
                 )
+            }
+            item {
+                FilterRow(
+                    title = "Grade",
+                    options = listOf(ALL) + BoulderGrade.options(state.gradeSystem).map { it.label(state.gradeSystem) },
+                    selected = gradeFilter,
+                    onSelect = { gradeFilter = it },
+                )
+            }
+            item {
+                FilterRow(
+                    title = "Feet rule",
+                    options = listOf(ALL) + FeetRule.entries.map { it.label },
+                    selected = feetFilter,
+                    onSelect = { feetFilter = it },
+                )
+            }
+            if (setters.size > 1) {
+                item {
+                    FilterRow(
+                        title = "Setter",
+                        options = listOf(ALL) + setters,
+                        selected = setterFilter,
+                        onSelect = { setterFilter = it },
+                    )
+                }
+            }
+            if (tags.isNotEmpty()) {
+                item {
+                    FilterRow(
+                        title = "Tag",
+                        options = listOf(ALL) + tags,
+                        selected = tagFilter,
+                        onSelect = { tagFilter = it },
+                    )
+                }
             }
         }
         items(visibleProblems, key = { it.id }) { problem ->
