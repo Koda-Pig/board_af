@@ -59,6 +59,10 @@ object SnapshotCodec {
             )
             put("problems", JsonArray(snapshot.problems.map { encodeProblem(it) }))
             put(
+                "deletedProblems",
+                JsonArray(snapshot.deletedProblemIds.sorted().map { JsonPrimitive(it) }),
+            )
+            put(
                 "unreadable",
                 JsonArray(
                     snapshot.unreadable.map { record ->
@@ -135,6 +139,12 @@ object SnapshotCodec {
             }.onSuccess { unreadable += it }
         }
 
+        // Additive since v2; absent in older snapshots, which is an empty set.
+        val deletedProblemIds = (root["deletedProblems"] as? JsonArray)
+            ?.mapNotNull { runCatching { it.jsonPrimitive.content }.getOrNull() }
+            ?.toSet()
+            .orEmpty()
+
         return DecodeResult.Success(
             snapshot = LibrarySnapshot(
                 setup = setup,
@@ -142,6 +152,7 @@ object SnapshotCodec {
                 gradeSystem = gradeSystem,
                 setterMode = setterMode,
                 unreadable = unreadable,
+                deletedProblemIds = deletedProblemIds,
             ),
             issues = issues,
         )

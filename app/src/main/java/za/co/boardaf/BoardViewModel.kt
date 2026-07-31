@@ -49,6 +49,8 @@ data class BoardUiState(
     val setup: BoardSetup = BoardSetup.default(),
     val storageIssues: List<StorageIssue> = emptyList(),
     val unreadableRecords: List<UnreadableRecord> = emptyList(),
+    /** Tombstones for locally deleted problems, propagated by cloud sync. */
+    val deletedProblemIds: Set<String> = emptySet(),
     val cloud: CloudSyncState = CloudSyncState(),
 ) {
     val board: ConfiguredBoard
@@ -65,7 +67,18 @@ data class BoardUiState(
 
 sealed interface BoardEvent {
     data class TapRejected(val rejection: TapRejection) : BoardEvent
-    data class Message(val text: String) : BoardEvent
+    data class Message(
+        val text: String,
+        val actionLabel: String? = null,
+        /**
+         * When set, the snackbar action restores this problem to exactly the
+         * state it held before it was archived — not a recomputed one.
+         */
+        val undoArchive: ArchiveUndo? = null,
+    ) : BoardEvent
+
+    /** Everything needed to put an archived problem back the way it was. */
+    data class ArchiveUndo(val problemId: String, val previousState: PublicationState)
 }
 
 class BoardViewModel @JvmOverloads constructor(
@@ -94,6 +107,7 @@ class BoardViewModel @JvmOverloads constructor(
                 setup = result.snapshot.setup,
                 storageIssues = result.issues,
                 unreadableRecords = result.snapshot.unreadable,
+                deletedProblemIds = result.snapshot.deletedProblemIds,
             )
             cloudSync?.onLocalChanged(result.snapshot)
         }
@@ -120,6 +134,7 @@ class BoardViewModel @JvmOverloads constructor(
                     gradeSystem = merged.snapshot.gradeSystem,
                     setterMode = merged.snapshot.setterMode,
                     unreadableRecords = merged.snapshot.unreadable,
+                    deletedProblemIds = merged.snapshot.deletedProblemIds,
                 )
                 persist()
             }
@@ -147,14 +162,51 @@ class BoardViewModel @JvmOverloads constructor(
     // --- Library -----------------------------------------------------------------
 
     fun selectProblem(problemId: String) {
+        if (mutableState.value.isSetting) autosaveDraft()
         mutableState.value = mutableState.value.copy(
             selectedProblemId = problemId,
             isSetting = false,
         )
     }
 
-    fun archiveProblem(problemId: String) = updateProblem(problemId) {
-        it.copy(publicationState = PublicationState.ARCHIVED)
+    /** Swipe between active (non-archived) problems while viewing. */
+    fun selectAdjacentProblem(delta: Int) {
+        val current = mutableState.value
+        if (current.isSetting) return
+        val active = current.problems.filter { it.publicationState != PublicationState.ARCHIVED }
+        if (active.size < 2) return
+        val selectedId = current.selectedProblem?.id ?: return
+        val index = active.indexOfFirst { it.id == selectedId }
+        if (index < 0) return
+        // Clamped, not wrapped: silently jumping from the last problem back to the
+        // first reads as a bug when you can't see the whole list.
+        val target = index + delta
+        if (target !in active.indices) return
+        mutableState.value = current.copy(selectedProblemId = active[target].id)
+    }
+
+    fun archiveProblem(problemId: String) {
+        val problem = mutableState.value.problems.firstOrNull { it.id == problemId } ?: return
+        updateProblem(problemId) {
+            it.copy(publicationState = PublicationState.ARCHIVED)
+        }
+        val label = problem.name.ifBlank { "Untitled draft" }
+        emit(
+            BoardEvent.Message(
+                text = "Archived $label",
+                actionLabel = "Undo",
+                undoArchive = BoardEvent.ArchiveUndo(problemId, problem.publicationState),
+            ),
+        )
+    }
+
+    /**
+     * Exact inverse of [archiveProblem]. Distinct from [unarchiveProblem], which
+     * recomputes a state for a problem restored long after the fact — that would
+     * silently demote a benchmark to published.
+     */
+    fun restoreArchived(undo: BoardEvent.ArchiveUndo) = updateProblem(undo.problemId) {
+        it.copy(publicationState = undo.previousState)
     }
 
     fun unarchiveProblem(problemId: String) = updateProblem(problemId) { problem ->
@@ -166,6 +218,32 @@ class BoardViewModel @JvmOverloads constructor(
                 else -> PublicationState.DRAFT
             },
         )
+    }
+
+    fun deleteProblem(problemId: String) {
+        val current = mutableState.value
+        if (current.problems.none { it.id == problemId }) return
+        val nextSelected = when (current.selectedProblemId) {
+            problemId -> current.problems
+                .filter { it.id != problemId && it.publicationState != PublicationState.ARCHIVED }
+                .firstOrNull()?.id
+                ?: current.problems.firstOrNull { it.id != problemId }?.id
+            else -> current.selectedProblemId
+        }
+        mutableState.value = current.copy(
+            problems = current.problems.filterNot { it.id == problemId },
+            // Tombstone, so sync propagates the delete instead of re-adopting
+            // the record from the server on the next merge.
+            deletedProblemIds = current.deletedProblemIds + problemId,
+            selectedProblemId = nextSelected,
+            isSetting = if (current.isSetting && current.setter.draft.editingProblemId == problemId) {
+                false
+            } else {
+                current.isSetting
+            },
+        )
+        persist()
+        emit(BoardEvent.Message("Problem deleted."))
     }
 
     fun toggleBenchmark(problemId: String) = updateProblem(problemId) { problem ->
@@ -191,15 +269,19 @@ class BoardViewModel @JvmOverloads constructor(
                 forerunConfirmedAt = System.currentTimeMillis(),
             )
         }
+        val label = problem.name.ifBlank { "Untitled draft" }
+        emit(BoardEvent.Message("$label published."))
     }
 
     // --- Setter session ----------------------------------------------------------
 
     fun startSetting() {
+        // Never drop a live session on the floor; the "+" confirms before landing here.
+        if (mutableState.value.isSetting) autosaveDraft()
         val current = mutableState.value
         mutableState.value = current.copy(
             isSetting = true,
-            setter = SetterReducer.start(DraftProblem()),
+            setter = SetterReducer.start(DraftProblem(setter = currentSetterName())),
         )
     }
 
@@ -227,7 +309,11 @@ class BoardViewModel @JvmOverloads constructor(
         val current = mutableState.value
         if (!current.isSetting) return
         autosaveDraft()
-        mutableState.value = mutableState.value.copy(isSetting = false)
+        val draftId = mutableState.value.setter.draft.editingProblemId
+        mutableState.value = mutableState.value.copy(
+            isSetting = false,
+            selectedProblemId = draftId ?: mutableState.value.selectedProblemId,
+        )
     }
 
     fun tapHold(holdId: String) {
@@ -342,6 +428,7 @@ class BoardViewModel @JvmOverloads constructor(
 
     fun setKickboardEnabled(enabled: Boolean) = updateSetup { it.withKickboardEnabled(enabled) }
 
+    /** Commit kickboard boundary once (not on every drag frame). */
     fun setKickboardBoundary(y: Float) = updateSetup { it.withBoundary(y) }
 
     fun toggleHoldCapability(holdId: String) = updateSetup { it.withCapabilityToggled(holdId) }
@@ -427,6 +514,7 @@ class BoardViewModel @JvmOverloads constructor(
         gradeSystem = gradeSystem,
         setterMode = setterMode,
         unreadable = unreadableRecords,
+        deletedProblemIds = deletedProblemIds,
     )
 
     private fun emit(event: BoardEvent) {
@@ -439,4 +527,10 @@ class BoardViewModel @JvmOverloads constructor(
         .replace(Regex("[^a-z0-9]+"), "-")
         .trim('-')
         .ifBlank { "problem" }
+
+    /** Prefer the signed-in account's local-part so synced libraries don't all say "You". */
+    private fun currentSetterName(): String {
+        val email = mutableState.value.cloud.userEmail?.substringBefore('@')?.trim().orEmpty()
+        return email.ifBlank { "You" }
+    }
 }

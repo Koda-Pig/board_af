@@ -23,6 +23,11 @@ data class LibrarySnapshot(
     val gradeSystem: GradeSystem = GradeSystem.FRENCH,
     val setterMode: SetterMode = SetterMode.GUIDED,
     val unreadable: List<UnreadableRecord> = emptyList(),
+    /**
+     * Tombstones for problems deleted on this device. Kept so cloud sync can
+     * propagate the delete instead of re-adopting the record from the server.
+     */
+    val deletedProblemIds: Set<String> = emptySet(),
 )
 
 enum class StorageIssueCode {

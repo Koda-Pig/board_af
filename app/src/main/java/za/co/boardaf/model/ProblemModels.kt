@@ -93,8 +93,17 @@ data class DraftProblem(
     val startRule: StartRule get() = startRuleFor(assignments)
     val finishRule: FinishRule get() = finishRuleFor(assignments)
 
+    /**
+     * Deliberately permissive: autosave must never be the reason work is lost.
+     * A stricter bar would silently discard a draft with only start holds when
+     * the setter is closed. Library clutter is handled where it belongs instead —
+     * untitled drafts render as "Untitled draft" and can be deleted.
+     */
     val hasContent: Boolean
-        get() = name.isNotBlank() || note.isNotBlank() || assignments.isNotEmpty()
+        get() = name.isNotBlank() ||
+            note.isNotBlank() ||
+            tags.isNotEmpty() ||
+            assignments.isNotEmpty()
 
     fun countFor(role: ProblemHoldRole): Int = assignments.count { it.role == role }
 

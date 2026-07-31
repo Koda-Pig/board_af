@@ -22,6 +22,12 @@ class SetterReducerTest {
 
     private fun freshState() = SetterReducer.start(DraftProblem())
 
+    /**
+     * A fresh session parked on a step that actually assigns a role. Only the
+     * hold steps accept taps, so tap-level tests have to start from one.
+     */
+    private fun holdStepState() = freshState().copy(guidedStep = GuidedStep.OTHER)
+
     private fun draftWithContent() = DraftProblem(
         name = "Old line",
         assignments = listOf(
@@ -37,7 +43,7 @@ class SetterReducerTest {
 
     @Test
     fun `tapping adds removes and replaces assignments`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
 
         state = SetterReducer.tapHold(state, "h20", board).state
         assertEquals(ProblemHoldRole.REGULAR, state.roleOf("h20"))
@@ -52,7 +58,7 @@ class SetterReducerTest {
 
     @Test
     fun `changing a hold's role announces it, plain adds and removes stay quiet`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
 
         val added = SetterReducer.tapHold(state, "h20", board)
         assertNull(added.notice)
@@ -68,7 +74,7 @@ class SetterReducerTest {
 
     @Test
     fun `a third start hold is rejected at tap time`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.START)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.START)
         state = SetterReducer.tapHold(state, "h20", board).state
         state = SetterReducer.tapHold(state, "h21", board).state
 
@@ -81,7 +87,7 @@ class SetterReducerTest {
 
     @Test
     fun `reassigning into a full role is also capped`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.START)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.START)
         state = SetterReducer.tapHold(state, "h20", board).state
         state = SetterReducer.tapHold(state, "h21", board).state
         state = SetterReducer.selectRole(state, ProblemHoldRole.REGULAR)
@@ -97,7 +103,7 @@ class SetterReducerTest {
     @Test
     fun `hand roles are rejected on foot-only kicker holds without changing the draft`() {
         listOf(ProblemHoldRole.START, ProblemHoldRole.REGULAR, ProblemHoldRole.FINISH).forEach { role ->
-            val state = SetterReducer.selectRole(freshState(), role)
+            val state = SetterReducer.selectRole(holdStepState(), role)
             val result = SetterReducer.tapHold(state, "h43", board)
 
             assertNotNull("$role should be rejected", result.rejection)
@@ -109,7 +115,7 @@ class SetterReducerTest {
 
     @Test
     fun `foot instead is not offered when the feet rule ignores foot marks`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
         state = SetterReducer.setFeetRule(state, FeetRule.CAMPUS)
 
         val result = SetterReducer.tapHold(state, "h43", board)
@@ -120,7 +126,7 @@ class SetterReducerTest {
 
     @Test
     fun `foot-only role is accepted on kicker holds`() {
-        val state = SetterReducer.selectRole(freshState(), ProblemHoldRole.FOOT_ONLY)
+        val state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.FOOT_ONLY)
         val result = SetterReducer.tapHold(state, "h43", board)
 
         assertNull(result.rejection)
@@ -130,7 +136,7 @@ class SetterReducerTest {
     @Test
     fun `a corrected kicker hold accepts hand roles again`() {
         val corrected = ConfiguredBoard.from(BoardSetup.default().withCapabilityToggled("h43"))
-        val state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        val state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
 
         val result = SetterReducer.tapHold(state, "h43", corrected)
 
@@ -139,8 +145,36 @@ class SetterReducerTest {
     }
 
     @Test
+    fun `steps that assign no role ignore taps instead of guessing one`() {
+        // A library edit lands on details & review, which shows no role palette.
+        // Taps used to fall through to whatever role was last active — START on
+        // entry — so tapping a kicker hold to add feet was rejected as "that hold
+        // is foot-only, it can't be a start hold".
+        val landed = SetterReducer.start(draftWithContent())
+        assertEquals(GuidedStep.DETAILS, landed.guidedStep)
+
+        val result = SetterReducer.tapHold(landed, "h43", board)
+
+        assertNull(result.rejection)
+        assertNotNull("the setter needs to be told why nothing happened", result.notice)
+        assertEquals(landed.draft, result.state.draft)
+        assertTrue(result.state.undoStack.isEmpty())
+    }
+
+    @Test
+    fun `the feet rule step ignores taps too`() {
+        val state = freshState()
+        assertEquals(GuidedStep.FEET_RULE, state.guidedStep)
+
+        val result = SetterReducer.tapHold(state, "h20", board)
+
+        assertNull(result.state.roleOf("h20"))
+        assertNotNull(result.notice)
+    }
+
+    @Test
     fun `mark as foot instead assigns the rejected hold`() {
-        val state = SetterReducer.selectRole(freshState(), ProblemHoldRole.START)
+        val state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.START)
         val rejected = SetterReducer.tapHold(state, "h43", board)
         val marked = SetterReducer.markFootInstead(rejected.state, "h43")
 
@@ -151,7 +185,7 @@ class SetterReducerTest {
 
     @Test
     fun `undo restores both the assignment and its previous role`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
         state = SetterReducer.tapHold(state, "h20", board).state
         state = SetterReducer.selectRole(state, ProblemHoldRole.START)
         state = SetterReducer.tapHold(state, "h20", board).state
@@ -173,7 +207,7 @@ class SetterReducerTest {
 
     @Test
     fun `clear empties the wall and stays undoable`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
         state = SetterReducer.tapHold(state, "h20", board).state
         state = SetterReducer.tapHold(state, "h21", board).state
 
@@ -186,7 +220,7 @@ class SetterReducerTest {
 
     @Test
     fun `history is bounded`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
         val holdIds = board.holds.map { it.id }.filter { it < "h37" }
         repeat(SetterReducer.HISTORY_LIMIT + 10) { index ->
             state = SetterReducer.tapHold(state, holdIds[index % holdIds.size], board).state
@@ -197,7 +231,7 @@ class SetterReducerTest {
 
     @Test
     fun `a new action clears the redo stack`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.REGULAR)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.REGULAR)
         state = SetterReducer.tapHold(state, "h20", board).state
         state = SetterReducer.undo(state)
         assertTrue(state.canRedo)
@@ -210,7 +244,7 @@ class SetterReducerTest {
 
     @Test
     fun `switching to campus clears foot marks and stays undoable`() {
-        var state = SetterReducer.selectRole(freshState(), ProblemHoldRole.FOOT_ONLY)
+        var state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.FOOT_ONLY)
         state = SetterReducer.tapHold(state, "h43", board).state
         state = SetterReducer.selectRole(state, ProblemHoldRole.REGULAR)
         state = SetterReducer.tapHold(state, "h20", board).state
@@ -227,7 +261,7 @@ class SetterReducerTest {
 
     @Test
     fun `an active foot-only palette falls back to regular when marks stop meaning anything`() {
-        val state = SetterReducer.selectRole(freshState(), ProblemHoldRole.FOOT_ONLY)
+        val state = SetterReducer.selectRole(holdStepState(), ProblemHoldRole.FOOT_ONLY)
 
         val anyFeet = SetterReducer.setFeetRule(state, FeetRule.ANY_FEET)
 
@@ -240,6 +274,24 @@ class SetterReducerTest {
     fun `a new session starts at the feet rule step`() {
         val state = freshState()
         assertEquals(GuidedStep.FEET_RULE, state.guidedStep)
+    }
+
+    @Test
+    fun `a single tapped hold already counts as content worth autosaving`() {
+        // Autosave is the only thing standing between a half-set problem and
+        // losing it, so the bar has to stay low.
+        val oneTap = DraftProblem(
+            assignments = listOf(ProblemAssignment("h20", ProblemHoldRole.START)),
+        )
+
+        assertTrue(oneTap.hasContent)
+        assertFalse(DraftProblem().hasContent)
+    }
+
+    @Test
+    fun `a name or a note alone is content even with no holds`() {
+        assertTrue(DraftProblem(name = "Sloper traverse").hasContent)
+        assertTrue(DraftProblem(note = "reachy off the second").hasContent)
     }
 
     @Test

@@ -200,6 +200,7 @@ class FirestoreCloudSync(
             encoded = payload,
             revision = doc.getLong("revision") ?: 0L,
             pendingWrite = doc.metadata.hasPendingWrites(),
+            deleted = doc.getBoolean("deleted") == true,
         )
     }
 
@@ -223,7 +224,10 @@ class FirestoreCloudSync(
 
             ensureBoardDoc(uid)
 
-            if (plan.problemPushes.isNotEmpty() || plan.boardPush != null) {
+            if (plan.problemPushes.isNotEmpty() ||
+                plan.problemDeletes.isNotEmpty() ||
+                plan.boardPush != null
+            ) {
                 val batch = db.batch()
                 val boardDoc = db.collection("boards").document(uid)
                 plan.boardPush?.let { push ->
@@ -251,6 +255,20 @@ class FirestoreCloudSync(
                             "updatedAt" to FieldValue.serverTimestamp(),
                             "updatedBy" to uid,
                         ),
+                    )
+                }
+                plan.problemDeletes.forEach { delete ->
+                    // Soft delete: the payload stays so other devices see an explicit
+                    // tombstone instead of a document that silently disappeared.
+                    batch.set(
+                        boardDoc.collection("problems").document(delete.id),
+                        mapOf(
+                            "deleted" to true,
+                            "revision" to delete.revision,
+                            "updatedAt" to FieldValue.serverTimestamp(),
+                            "updatedBy" to uid,
+                        ),
+                        SetOptions.merge(),
                     )
                 }
                 batch.commit().await()

@@ -27,7 +27,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,11 @@ import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.ui.theme.Gold
 import za.co.boardaf.ui.theme.Sky
 
+private val BoardTransformSaver = listSaver<BoardTransform, Float>(
+    save = { listOf(it.scale, it.offsetX, it.offsetY) },
+    restore = { BoardTransform(scale = it[0], offsetX = it[1], offsetY = it[2]) },
+)
+
 enum class BoardDisplayMode {
     /** Climbing: only the problem's markers, no editing affordances. */
     VIEW,
@@ -84,9 +90,13 @@ fun BoardSurface(
     mode: BoardDisplayMode,
     onHoldClick: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Setting steps that assign no role show the board but must not take taps. */
+    holdsEnabled: Boolean = true,
 ) {
     val assignmentsById = assignments.associateBy { it.holdId }
-    var transform by remember(mode) { mutableStateOf(BoardTransform.IDENTITY) }
+    var transform by rememberSaveable(mode, stateSaver = BoardTransformSaver) {
+        mutableStateOf(BoardTransform.IDENTITY)
+    }
     val density = LocalDensity.current
 
     BoxWithConstraints(
@@ -99,7 +109,7 @@ fun BoardSurface(
             width = constraints.maxWidth.toFloat(),
             height = constraints.maxHeight.toFloat(),
         )
-        val touchTarget = 44.dp
+        val touchTarget = 48.dp
         val touchTargetPx = with(density) { touchTarget.toPx() }
 
         Box(
@@ -171,7 +181,10 @@ fun BoardSurface(
                 val assignment = assignmentsById[hold.id]
                 val visible = when (mode) {
                     BoardDisplayMode.VIEW -> assignment != null
-                    BoardDisplayMode.SET, BoardDisplayMode.CONFIGURE -> true
+                    // Locked setting steps read as review: show the line, not the
+                    // pick-me hints on holds that can't be tapped right now.
+                    BoardDisplayMode.SET -> holdsEnabled || assignment != null
+                    BoardDisplayMode.CONFIGURE -> true
                 }
                 if (visible) {
                     val anchor = BoardTransforms.anchor(hold.point, containerSize, transform)
@@ -183,6 +196,7 @@ fun BoardSurface(
                             hold = hold,
                             role = assignment?.role,
                             mode = mode,
+                            enabled = holdsEnabled,
                             onClick = { onHoldClick(hold.id) },
                             modifier = Modifier.offset {
                                 IntOffset(
@@ -255,6 +269,7 @@ private fun HoldTarget(
     hold: ConfiguredHold,
     role: ProblemHoldRole?,
     mode: BoardDisplayMode,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -276,9 +291,9 @@ private fun HoldTarget(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(44.dp)
+            .size(48.dp)
             .semantics { contentDescription = description }
-            .clickable(enabled = mode != BoardDisplayMode.VIEW, onClick = onClick),
+            .clickable(enabled = enabled && mode != BoardDisplayMode.VIEW, onClick = onClick),
     ) {
         when {
             mode == BoardDisplayMode.CONFIGURE -> CapabilityDot(hold = hold, overridden = overridden)
@@ -293,22 +308,20 @@ private fun HoldTarget(
 
 @Composable
 private fun UnassignedHint(capability: HoldCapability) {
+    // Outline-only so the hold photo reads through while choosing.
     Canvas(modifier = Modifier.size(26.dp)) {
-        drawCircle(
-            color = Color(0x55273338),
-            radius = size.minDimension / 2 - 4.dp.toPx(),
-        )
+        val radius = size.minDimension / 2 - 4.dp.toPx()
         when (capability) {
             HoldCapability.HAND_AND_FOOT -> drawCircle(
-                color = Color.White.copy(alpha = 0.75f),
-                radius = size.minDimension / 2 - 4.dp.toPx(),
-                style = Stroke(width = 1.dp.toPx()),
+                color = Color.White.copy(alpha = 0.85f),
+                radius = radius,
+                style = Stroke(width = 1.5.dp.toPx()),
             )
             HoldCapability.FOOT_ONLY -> drawCircle(
-                color = Gold.copy(alpha = 0.9f),
-                radius = size.minDimension / 2 - 4.dp.toPx(),
+                color = Gold.copy(alpha = 0.95f),
+                radius = radius,
                 style = Stroke(
-                    width = 1.2.dp.toPx(),
+                    width = 1.5.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
                 ),
             )
@@ -318,16 +331,18 @@ private fun UnassignedHint(capability: HoldCapability) {
 
 @Composable
 private fun CapabilityDot(hold: ConfiguredHold, overridden: Boolean) {
+    // Outline-only rings so Setup can visually verify the photo under each hold.
     Canvas(modifier = Modifier.size(28.dp)) {
-        drawCircle(color = Color(0x66101410), radius = size.minDimension / 2)
+        val radius = size.minDimension / 2 - 3.dp.toPx()
         when (hold.capability) {
             HoldCapability.HAND_AND_FOOT -> drawCircle(
-                color = Sky.copy(alpha = 0.9f),
-                radius = size.minDimension / 2 - 5.dp.toPx(),
+                color = Sky.copy(alpha = 0.95f),
+                radius = radius,
+                style = Stroke(width = 2.5.dp.toPx()),
             )
             HoldCapability.FOOT_ONLY -> drawCircle(
                 color = Gold.copy(alpha = 0.95f),
-                radius = size.minDimension / 2 - 4.dp.toPx(),
+                radius = radius,
                 style = Stroke(
                     width = 2.5.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 5f)),

@@ -295,4 +295,82 @@ class SyncPlannerTest {
         assertEquals(SetterMode.QUICK, boardPush!!.setterMode)
         assertEquals(6L, boardPush.revision)
     }
+
+    // --- Deletion tombstones ---------------------------------------------------
+
+    @Test
+    fun `a locally deleted problem is pushed as a tombstone, not re-adopted`() {
+        val gone = problem("p1")
+        val kept = problem("p2")
+        val local = snapshot(kept).copy(deletedProblemIds = setOf("p1"))
+        val remote = RemoteLibrary(
+            board = remoteBoard(local),
+            problems = mapOf("p1" to remoteRecord(gone, revision = 3), "p2" to remoteRecord(kept)),
+        )
+
+        val plan = SyncPlanner.plan(local, remote, agreedBaselines(snapshot(gone, kept)), now)
+
+        assertEquals(listOf("p1"), plan.problemDeletes.map { it.id })
+        assertEquals(4L, plan.problemDeletes.single().revision)
+        // The surviving server copy must not come back as an addition.
+        assertTrue(plan.mergedSnapshot?.problems.orEmpty().none { it.id == "p1" })
+        assertTrue(plan.problemPushes.none { it.problem.id == "p1" })
+        // A deleted record must not keep a baseline.
+        assertNull(plan.baselines.problems["p1"])
+    }
+
+    @Test
+    fun `a remote tombstone deletes the local copy and is recorded locally`() {
+        val doomed = problem("p1")
+        val local = snapshot(doomed, problem("p2"))
+        val remote = RemoteLibrary(
+            board = remoteBoard(local),
+            problems = mapOf(
+                "p1" to remoteRecord(doomed, revision = 2).copy(deleted = true),
+                "p2" to remoteRecord(problem("p2")),
+            ),
+        )
+
+        val plan = SyncPlanner.plan(local, remote, agreedBaselines(local), now)
+
+        val merged = plan.mergedSnapshot
+        assertNotNull(merged)
+        assertEquals(listOf("p2"), merged!!.problems.map { it.id })
+        // Tombstone is retained locally so an offline device can't resurrect it.
+        assertTrue("p1" in merged.deletedProblemIds)
+        assertTrue(plan.problemPushes.none { it.problem.id == "p1" })
+        assertNull(plan.baselines.problems["p1"])
+    }
+
+    @Test
+    fun `a tombstone for a problem the server never had needs no delete push`() {
+        val local = snapshot(problem("p2")).copy(deletedProblemIds = setOf("p1"))
+        val remote = RemoteLibrary(
+            board = remoteBoard(local),
+            problems = mapOf("p2" to remoteRecord(problem("p2"))),
+        )
+
+        val plan = SyncPlanner.plan(local, remote, agreedBaselines(snapshot(problem("p2"))), now)
+
+        assertTrue(plan.problemDeletes.isEmpty())
+        assertTrue(plan.problemPushes.isEmpty())
+        // Nothing changed, so there is nothing to adopt.
+        assertNull(plan.mergedSnapshot)
+    }
+
+    @Test
+    fun `deleting still beats the restore-from-device rule for a vanished doc`() {
+        // A doc that simply disappeared is data loss and gets re-pushed...
+        val kept = problem("p1")
+        val local = snapshot(kept)
+        val remote = RemoteLibrary(board = remoteBoard(local), problems = emptyMap())
+        val restored = SyncPlanner.plan(local, remote, agreedBaselines(local), now)
+        assertEquals(listOf("p1"), restored.problemPushes.map { it.problem.id })
+
+        // ...unless this device deleted it on purpose.
+        val deletedLocal = snapshot().copy(deletedProblemIds = setOf("p1"))
+        val afterDelete = SyncPlanner.plan(deletedLocal, remote, agreedBaselines(local), now)
+        assertTrue(afterDelete.problemPushes.isEmpty())
+        assertTrue(afterDelete.problemDeletes.isEmpty())
+    }
 }

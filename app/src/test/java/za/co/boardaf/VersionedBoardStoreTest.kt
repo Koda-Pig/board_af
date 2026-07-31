@@ -107,6 +107,31 @@ class VersionedBoardStoreTest {
     }
 
     @Test
+    fun `deletion tombstones survive a roundtrip`() {
+        val snapshot = fullSnapshot().copy(deletedProblemIds = setOf("gone-1", "gone-2"))
+
+        val decoded = SnapshotCodec.decode(SnapshotCodec.encode(snapshot))
+
+        check(decoded is SnapshotCodec.DecodeResult.Success)
+        assertEquals(setOf("gone-1", "gone-2"), decoded.snapshot.deletedProblemIds)
+    }
+
+    @Test
+    fun `a v2 snapshot written before tombstones existed still decodes`() {
+        // The field is additive, so no version bump: older payloads must not break.
+        val encoded = SnapshotCodec.encode(fullSnapshot())
+        val withoutField = Json.parseToJsonElement(encoded).jsonObject
+            .filterKeys { it != "deletedProblems" }
+            .let { JsonObject(it) }
+            .toString()
+
+        val decoded = SnapshotCodec.decode(withoutField)
+
+        check(decoded is SnapshotCodec.DecodeResult.Success)
+        assertTrue(decoded.snapshot.deletedProblemIds.isEmpty())
+    }
+
+    @Test
     fun `first load migrates v1 and leaves the legacy payload untouched`() = runTest {
         val io = FakeIO(legacy = legacyPayload, legacyGrade = "V_SCALE")
         val store = VersionedBoardStore(io)

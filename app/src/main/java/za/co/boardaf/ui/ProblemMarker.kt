@@ -2,15 +2,16 @@ package za.co.boardaf.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -146,11 +147,15 @@ private fun DrawScope.drawMarker(role: ProblemHoldRole) {
 }
 
 /** Legend that renders the actual board glyphs, not colored dots. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MarkerLegend(modifier: Modifier = Modifier) {
-    Row(modifier = modifier.horizontalScroll(rememberScrollState())) {
-        ProblemHoldRole.entries.forEachIndexed { index, role ->
-            if (index > 0) Spacer(Modifier.width(14.dp))
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ProblemHoldRole.entries.forEach { role ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ProblemMarker(role = role, size = 22.dp)
                 Spacer(Modifier.width(6.dp))

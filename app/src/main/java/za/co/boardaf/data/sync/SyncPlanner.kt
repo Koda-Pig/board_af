@@ -14,8 +14,11 @@ import za.co.boardaf.model.Problem
  *   content are identical, or to the content of a push that the caller will
  *   persist only after Firebase acknowledges it. Pending remote writes are skipped.
  * - Remote docs that failed to decode are never overwritten by pushes.
- * - A remote deletion of a record this device has synced before is treated as
- *   data loss and repaired by re-pushing the local copy.
+ * - A record that simply vanished from the server is treated as data loss and
+ *   repaired by re-pushing the local copy. Intentional deletes are therefore
+ *   expressed as explicit tombstones, never as an absent document:
+ *   [LibrarySnapshot.deletedProblemIds] locally, `deleted = true` remotely.
+ *   A tombstone on either side wins over any surviving copy on the other.
  */
 object SyncPlanner {
 
@@ -28,6 +31,8 @@ object SyncPlanner {
         val issues = mutableListOf<String>()
         val newBaselines = mutableMapOf<String, String>()
         val pushes = mutableListOf<ProblemPush>()
+        val deletes = mutableListOf<ProblemDelete>()
+        val tombstones = local.deletedProblemIds.toMutableSet()
 
         val localById = local.problems.associateBy { it.id }
         val localEncoded = local.problems.associate { it.id to SyncCodec.encodeProblem(it) }
@@ -37,7 +42,7 @@ object SyncPlanner {
         val additions = mutableListOf<Problem>()
         var changedLocally = false
 
-        val allIds = localById.keys + remote.problems.keys
+        val allIds = localById.keys + remote.problems.keys + local.deletedProblemIds
         for (id in allIds) {
             val localProblem = localById[id]
             val record = remote.problems[id]
@@ -55,6 +60,27 @@ object SyncPlanner {
                 // Our own write hasn't been acknowledged yet; decide next round.
                 if (localProblem != null) resolved[id] = localProblem
                 if (baseline != null) newBaselines[id] = baseline
+                continue
+            }
+
+            // A tombstone on either side removes the record everywhere. Checked
+            // before the merge rules so a delete is never mistaken for an edit
+            // conflict, and a surviving copy never resurrects the record.
+            if (record?.deleted == true) {
+                if (id !in tombstones) {
+                    tombstones += id
+                    if (localProblem != null) {
+                        issues += "\"${localProblem.name}\" was deleted on another device."
+                    }
+                }
+                if (localProblem != null) changedLocally = true
+                continue
+            }
+
+            if (id in local.deletedProblemIds) {
+                // Deleted here; publish the tombstone so other devices drop it too.
+                if (record != null) deletes += ProblemDelete(id, revision = record.revision + 1)
+                if (localProblem != null) changedLocally = true
                 continue
             }
 
@@ -178,6 +204,8 @@ object SyncPlanner {
             )
         }
 
+        if (tombstones != local.deletedProblemIds) changedLocally = true
+
         val mergedSnapshot = if (changedLocally) {
             LibrarySnapshot(
                 setup = mergedSetup,
@@ -185,6 +213,7 @@ object SyncPlanner {
                 gradeSystem = mergedGradeSystem,
                 setterMode = mergedSetterMode,
                 unreadable = local.unreadable,
+                deletedProblemIds = tombstones,
             )
         } else {
             null
@@ -193,6 +222,7 @@ object SyncPlanner {
         return SyncPlan(
             mergedSnapshot = mergedSnapshot,
             problemPushes = pushes,
+            problemDeletes = deletes,
             boardPush = boardPush,
             baselines = SyncBaselines(board = boardBaseline, problems = newBaselines),
             issues = issues,

@@ -25,7 +25,14 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +62,7 @@ fun SetupScreen(
     val board = state.board
     val mainCount = board.holds.count { it.zone == BoardZoneType.MAIN }
     val kickerCount = board.holds.count { it.zone == BoardZoneType.KICKBOARD }
+    var setupHintDismissed by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -93,7 +101,7 @@ fun SetupScreen(
             }
         }
 
-        if (board.setupConfirmedAt == null) {
+        if (board.setupConfirmedAt == null && !setupHintDismissed) {
             item {
                 Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(14.dp)) {
                     Column(
@@ -110,11 +118,19 @@ fun SetupScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = BoardMuted,
                         )
-                        Button(
-                            onClick = actions.onConfirmBoardSetup,
-                            colors = ButtonDefaults.buttonColors(containerColor = BoardDark, contentColor = Color.White),
-                        ) {
-                            Text("Looks right — confirm")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = actions.onConfirmBoardSetup,
+                                colors = ButtonDefaults.buttonColors(containerColor = BoardDark, contentColor = Color.White),
+                            ) {
+                                Text("Looks right — confirm")
+                            }
+                            // Deliberately NOT onConfirmBoardSetup: confirming is a
+                            // claim about the board that the user hasn't made yet.
+                            // This hides the card for now and it returns next launch.
+                            TextButton(onClick = { setupHintDismissed = true }) {
+                                Text("Not now")
+                            }
                         }
                     }
                 }
@@ -179,14 +195,25 @@ fun SetupScreen(
                     )
                 }
                 if (board.hasKickboard) {
+                    var boundaryDraft by remember(board.kickboardTopY) {
+                        mutableFloatStateOf(board.kickboardTopY)
+                    }
                     Text(
                         "Boundary · holds below default to foot-only. Tap a hold above to correct exceptions.",
                         style = MaterialTheme.typography.bodySmall,
                         color = BoardMuted,
                     )
+                    Text(
+                        text = "Y = ${"%.0f".format(boundaryDraft * 100)}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
                     Slider(
-                        value = board.kickboardTopY,
-                        onValueChange = actions.onSetKickboardBoundary,
+                        value = boundaryDraft,
+                        onValueChange = { boundaryDraft = it },
+                        onValueChangeFinished = {
+                            actions.onSetKickboardBoundary(boundaryDraft)
+                        },
                         valueRange = 0.4f..0.98f,
                     )
                 }
@@ -266,14 +293,15 @@ fun SetupScreen(
 @Composable
 private fun CapabilityLegendDot(color: Color, filled: Boolean) {
     Canvas(modifier = Modifier.size(14.dp)) {
-        if (filled) {
-            drawCircle(color = color)
-        } else {
-            drawCircle(
-                color = color,
-                style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f))),
-            )
-        }
+        // Match board overlays: outline rings, not opaque fills.
+        drawCircle(
+            color = color,
+            style = if (filled) {
+                Stroke(width = 2.dp.toPx())
+            } else {
+                Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f)))
+            },
+        )
     }
 }
 

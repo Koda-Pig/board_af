@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,13 +28,17 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -47,9 +52,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import za.co.boardaf.R
 import za.co.boardaf.BoardEvent
 import za.co.boardaf.BoardViewModel
+import za.co.boardaf.R
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.FeetRule
@@ -64,6 +69,7 @@ import za.co.boardaf.ui.theme.Sage
 /** All screen callbacks in one place so screens and previews stay lightweight. */
 data class BoardActions(
     val onSelectProblem: (String) -> Unit = {},
+    val onSelectAdjacentProblem: (Int) -> Unit = {},
     val onStartSetting: () -> Unit = {},
     val onStartEditing: (String) -> Unit = {},
     val onDuplicateProblem: (String) -> Unit = {},
@@ -87,6 +93,7 @@ data class BoardActions(
     val onGoToGuidedStep: (GuidedStep) -> Unit = {},
     val onArchiveProblem: (String) -> Unit = {},
     val onUnarchiveProblem: (String) -> Unit = {},
+    val onDeleteProblem: (String) -> Unit = {},
     val onToggleBenchmark: (String) -> Unit = {},
     val onPublishProblem: (String) -> Unit = {},
     val onSetKickboardEnabled: (Boolean) -> Unit = {},
@@ -125,6 +132,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
     val actions = remember(viewModel) {
         BoardActions(
             onSelectProblem = viewModel::selectProblem,
+            onSelectAdjacentProblem = viewModel::selectAdjacentProblem,
             onStartSetting = viewModel::startSetting,
             onStartEditing = viewModel::startEditing,
             onDuplicateProblem = viewModel::duplicateProblem,
@@ -148,6 +156,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onGoToGuidedStep = viewModel::goToGuidedStep,
             onArchiveProblem = viewModel::archiveProblem,
             onUnarchiveProblem = viewModel::unarchiveProblem,
+            onDeleteProblem = viewModel::deleteProblem,
             onToggleBenchmark = viewModel::toggleBenchmark,
             onPublishProblem = viewModel::publishProblem,
             onSetKickboardEnabled = viewModel::setKickboardEnabled,
@@ -162,6 +171,18 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         )
     }
 
+    var confirmNewSession by rememberSaveable { mutableStateOf(false) }
+
+    fun navigateToBoard() {
+        navController.navigate(Destination.BOARD.route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -170,20 +191,62 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                     val result = snackbarHostState.showSnackbar(
                         message = event.rejection.message,
                         actionLabel = if (event.rejection.offerFootInstead) "Mark as foot instead" else null,
-                        duration = SnackbarDuration.Short,
+                        duration = if (event.rejection.offerFootInstead) {
+                            SnackbarDuration.Long
+                        } else {
+                            SnackbarDuration.Short
+                        },
                     )
                     if (result == SnackbarResult.ActionPerformed) {
                         viewModel.markFootInstead(event.rejection.holdId)
                     }
                 }
 
-                is BoardEvent.Message -> snackbarHostState.showSnackbar(event.text)
+                is BoardEvent.Message -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = event.text,
+                        actionLabel = event.actionLabel,
+                        duration = if (event.actionLabel != null) {
+                            SnackbarDuration.Long
+                        } else {
+                            SnackbarDuration.Short
+                        },
+                    )
+                    if (result == SnackbarResult.ActionPerformed && event.undoArchive != null) {
+                        viewModel.restoreArchived(event.undoArchive)
+                    }
+                }
             }
         }
     }
 
     // Back walks the wizard one step; from the first step it closes the session
     // (the draft is autosaved on every action, so nothing is lost).
+    if (confirmNewSession) {
+        AlertDialog(
+            onDismissRequest = { confirmNewSession = false },
+            title = { Text("Start a new problem?") },
+            text = {
+                Text(
+                    "Your current draft is saved to the library, and the setter will " +
+                        "start again from an empty board.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmNewSession = false
+                        viewModel.startSetting()
+                        if (currentDestination != Destination.BOARD) navigateToBoard()
+                    },
+                ) { Text("Start new") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmNewSession = false }) { Text("Keep editing") }
+            },
+        )
+    }
+
     BackHandler(enabled = state.isSetting) {
         if (state.setter.guidedStep.ordinal > 0) {
             viewModel.guidedBack()
@@ -192,9 +255,9 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = BoardPaper) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Scaffold(
-            containerColor = BoardPaper,
+            containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
@@ -221,13 +284,22 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                         }
                     },
                     actions = {
-                        if (currentDestination == Destination.BOARD || currentDestination == Destination.PROBLEMS) {
+                        val onBoardOrLibrary = currentDestination == Destination.BOARD ||
+                            currentDestination == Destination.PROBLEMS
+                        if (onBoardOrLibrary) {
                             IconButton(
+                                // Stays available during a session: sessions now
+                                // survive tab switches, so hiding this would strand
+                                // the user on the library with no way to start.
+                                // Restarting silently was the original bug, so a
+                                // live session asks first.
                                 onClick = {
-                                    viewModel.startSetting()
-                                    if (currentDestination != Destination.BOARD) {
-                                        navController.navigate(Destination.BOARD.route) {
-                                            launchSingleTop = true
+                                    if (state.isSetting) {
+                                        confirmNewSession = true
+                                    } else {
+                                        viewModel.startSetting()
+                                        if (currentDestination != Destination.BOARD) {
+                                            navigateToBoard()
                                         }
                                     }
                                 },
@@ -250,9 +322,8 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                         NavigationBarItem(
                             selected = selected,
                             onClick = {
-                                if (destination != Destination.BOARD) {
-                                    viewModel.cancelSetting()
-                                }
+                                // Keep the setter session alive across tabs so returning
+                                // to Board resumes where the user left off (draft is autosaved).
                                 navController.navigate(destination.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -300,15 +371,11 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                                 contentPadding = padding,
                                 onOpenProblem = { problemId ->
                                     viewModel.selectProblem(problemId)
-                                    navController.navigate(Destination.BOARD.route) {
-                                        launchSingleTop = true
-                                    }
+                                    navigateToBoard()
                                 },
                                 onEditProblem = { problemId ->
                                     viewModel.startEditing(problemId)
-                                    navController.navigate(Destination.BOARD.route) {
-                                        launchSingleTop = true
-                                    }
+                                    navigateToBoard()
                                 },
                             )
                         }

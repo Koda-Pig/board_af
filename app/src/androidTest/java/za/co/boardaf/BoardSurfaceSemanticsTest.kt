@@ -58,13 +58,13 @@ class BoardSurfaceSemanticsTest {
     }
 
     @Test
-    fun interactiveTargetsStayAtLeast44dp() {
+    fun interactiveTargetsStayAtLeast48dp() {
         setSurface(BoardDisplayMode.SET)
 
         composeRule
             .onNodeWithContentDescription("h35, Main board, Hands and feet, assigned Foot only")
-            .assertWidthIsAtLeast(44.dp)
-            .assertHeightIsAtLeast(44.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
     }
 
     @Test

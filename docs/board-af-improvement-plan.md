@@ -1,8 +1,26 @@
 # Board AF improvement plan
 
-Status: Implemented through P1 (18 July 2026)  
+Status: Implemented through P1 (18 July 2026); UX remediation pass in progress
+(31 July 2026) — see `UX_REVIEW.md` and `TODO.md`  
 Research basis: `docs/board-climbing-apps-route-setting-research.docx` (18 July 2026)  
 Scope: Native Android app, one fixed home board, offline-first
+
+## Status update (31 July 2026)
+
+A device-based UX review (`UX_REVIEW.md`) found 30 issues against the shipped
+P0/P1 work. Most are now addressed; the outstanding items are tracked in
+`TODO.md`. Three plan-level assumptions changed as a result:
+
+- **Touch targets are 48 dp, not 44 dp.** 44 dp was below Android's documented
+  minimum. Every "44 dp" in this document should be read as 48 dp.
+- **The phone layout is a bottom sheet.** P1.1's "keep the board dominant and
+  move controls into the lower thumb zone" was implemented as a single scrolling
+  column, which meant the board and its controls could never be on screen at the
+  same time. It is now a `BottomSheetScaffold`.
+- **Deletion exists.** P1.3 shipped archive as the only disposal route, which
+  made the library append-only. Delete is now a first-class action, which
+  required soft-delete tombstones in the sync planner so a deleted problem is not
+  re-adopted from the server.
 
 ## Implementation notes (18 July 2026)
 

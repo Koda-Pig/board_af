@@ -10,9 +10,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -29,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.data.sync.CloudSyncAvailability
 import za.co.boardaf.data.sync.CloudSyncState
@@ -82,7 +88,9 @@ fun CloudSyncCard(
 private fun SignInForm(cloud: CloudSyncState, actions: BoardActions) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
     val canSubmit = email.isNotBlank() && password.length >= 6 && !cloud.isAuthBusy
+    val passwordTooShort = password.isNotEmpty() && password.length < 6
 
     Text(
         "Sign in to back up problems and keep every device on this board in sync.",
@@ -100,9 +108,31 @@ private fun SignInForm(cloud: CloudSyncState, actions: BoardActions) {
     OutlinedTextField(
         value = password,
         onValueChange = { password = it },
-        label = { Text("Password (min 6 characters)") },
+        label = { Text("Password") },
         singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
+        visualTransformation = if (passwordVisible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingIcon = {
+            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                Icon(
+                    imageVector = if (passwordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                )
+            }
+        },
+        supportingText = {
+            Text(
+                if (passwordTooShort) {
+                    "Password must be at least 6 characters."
+                } else {
+                    "Minimum 6 characters."
+                },
+            )
+        },
+        isError = passwordTooShort,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         modifier = Modifier.fillMaxWidth(),
     )

@@ -1,6 +1,8 @@
 package za.co.boardaf.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -22,7 +24,7 @@ val Sky = Color(0xFF70C5DD)
 val Gold = Color(0xFFE9BD62)
 val Moss = Color(0xFF97C27F)
 
-private val BoardColorScheme = lightColorScheme(
+private val BoardLightColorScheme = lightColorScheme(
     primary = Forest,
     onPrimary = BoardSurface,
     primaryContainer = Color(0xFFDCE6CF),
@@ -39,10 +41,30 @@ private val BoardColorScheme = lightColorScheme(
     outline = BoardLine,
 )
 
+private val BoardDarkColorScheme = darkColorScheme(
+    primary = Sage,
+    onPrimary = BoardDark,
+    primaryContainer = Color(0xFF3A4A3A),
+    onPrimaryContainer = BoardPaper,
+    secondary = Fern,
+    onSecondary = BoardPaper,
+    tertiary = Moss,
+    background = Color(0xFF1A1F1C),
+    onBackground = BoardPaper,
+    surface = Color(0xFF242A26),
+    onSurface = BoardPaper,
+    surfaceVariant = Color(0xFF323932),
+    onSurfaceVariant = Color(0xFFB0B8A8),
+    outline = Color(0xFF4A5248),
+)
+
 @Composable
-fun BoardAfTheme(content: @Composable () -> Unit) {
+fun BoardAfTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
     MaterialTheme(
-        colorScheme = BoardColorScheme,
+        colorScheme = if (darkTheme) BoardDarkColorScheme else BoardLightColorScheme,
         content = content,
     )
 }

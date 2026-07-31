@@ -17,6 +17,12 @@ data class RemoteProblemRecord(
     val revision: Long,
     /** True while this device's own write has not yet been acknowledged by the server. */
     val pendingWrite: Boolean,
+    /**
+     * Soft-delete tombstone. The document keeps its payload so the delete is
+     * visible to every device (and recoverable), rather than the record simply
+     * vanishing — which the planner treats as server-side data loss.
+     */
+    val deleted: Boolean = false,
 )
 
 /** The board setup + settings document as last seen remotely. */
@@ -50,6 +56,9 @@ data class SyncBaselines(
 
 data class ProblemPush(val problem: Problem, val revision: Long)
 
+/** A local deletion to propagate as a remote tombstone. */
+data class ProblemDelete(val id: String, val revision: Long)
+
 data class BoardPush(
     val setup: BoardSetup,
     val gradeSystem: GradeSystem,
@@ -61,6 +70,8 @@ data class SyncPlan(
     /** Non-null when remote changes should be adopted locally (includes conflict copies). */
     val mergedSnapshot: LibrarySnapshot?,
     val problemPushes: List<ProblemPush>,
+    /** Local deletions to write as remote tombstones. */
+    val problemDeletes: List<ProblemDelete> = emptyList(),
     val boardPush: BoardPush?,
     val baselines: SyncBaselines,
     val issues: List<String> = emptyList(),

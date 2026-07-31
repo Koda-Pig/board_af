@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,7 +39,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -78,6 +82,8 @@ fun SetterPanel(
     val draft = setter.draft
     val step = setter.guidedStep
     var confirmClear by rememberSaveable { mutableStateOf(false) }
+    // Bitmask of GuidedStep ordinals where Next was tapped while gated.
+    var attemptedNextMask by rememberSaveable { mutableIntStateOf(0) }
 
     Card(
         modifier = modifier,
@@ -110,7 +116,11 @@ fun SetterPanel(
                 }
             }
 
-            WizardStepper(state = state, actions = actions)
+            WizardStepper(
+                state = state,
+                actions = actions,
+                hasAttemptedNext = attemptedNextMask and (1 shl step.ordinal) != 0,
+            )
 
             if (step != GuidedStep.FEET_RULE) {
                 FeetRuleBanner(
@@ -128,6 +138,16 @@ fun SetterPanel(
                 )
                 GuidedStep.DETAILS -> DetailsStep(state = state, actions = actions)
             }
+
+            MarkerLegend()
+
+            WizardNavRow(
+                state = state,
+                actions = actions,
+                onAttemptNext = {
+                    attemptedNextMask = attemptedNextMask or (1 shl step.ordinal)
+                },
+            )
         }
     }
 
@@ -152,16 +172,34 @@ fun SetterPanel(
 }
 
 @Composable
-private fun WizardStepper(state: BoardUiState, actions: BoardActions) {
+private fun WizardStepper(
+    state: BoardUiState,
+    actions: BoardActions,
+    hasAttemptedNext: Boolean,
+) {
     val setter = state.setter
     val draft = setter.draft
     val current = setter.guidedStep
     val blocking = SetterReducer.firstUnsatisfiedStep(draft)
     val reachableOrdinal = blocking?.ordinal ?: GuidedStep.entries.lastIndex
     val nextEnabled = blocking == null || blocking.ordinal > current.ordinal
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(current) {
+        listState.animateScrollToItem(current.ordinal)
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(
+            text = "Step ${current.ordinal + 1} of ${GuidedStep.entries.size}",
+            style = MaterialTheme.typography.labelMedium,
+            color = BoardMuted,
+            fontWeight = FontWeight.Bold,
+        )
+        LazyRow(
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
             items(GuidedStep.entries) { step ->
                 FilterChip(
                     selected = current == step,
@@ -182,23 +220,67 @@ private fun WizardStepper(state: BoardUiState, actions: BoardActions) {
                 )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (nextEnabled) current.hint else blocking.gateHint.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (nextEnabled) BoardMuted else Coral,
-                modifier = Modifier.weight(1f),
-            )
+        // DETAILS renders no Next button, so hasAttemptedNext can never be set
+        // there — yet that is exactly where a user lands on an incomplete problem
+        // and needs a route back to the blocking step.
+        val showGate = !nextEnabled &&
+            blocking != null &&
+            (hasAttemptedNext || current == GuidedStep.DETAILS)
+        if (showGate) {
             TextButton(
-                onClick = actions.onGuidedBack,
-                enabled = current.ordinal > 0,
-            ) { Text("Back") }
-            if (current != GuidedStep.DETAILS) {
-                TextButton(
-                    onClick = actions.onGuidedNext,
-                    enabled = nextEnabled,
-                ) { Text("Next") }
+                onClick = { actions.onGoToGuidedStep(blocking) },
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Text(
+                    // Name the destination: the chip for that step is often
+                    // scrolled off-screen, so "go there" has to be explicit.
+                    text = "${blocking.gateHint.orEmpty()} " +
+                        "Go to step ${blocking.ordinal + 1} · ${blocking.title}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Coral,
+                )
             }
+        } else {
+            Text(
+                text = current.hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = BoardMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WizardNavRow(
+    state: BoardUiState,
+    actions: BoardActions,
+    onAttemptNext: () -> Unit,
+) {
+    val current = state.setter.guidedStep
+    val blocking = SetterReducer.firstUnsatisfiedStep(state.setter.draft)
+    val nextEnabled = blocking == null || blocking.ordinal > current.ordinal
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextButton(
+            onClick = actions.onGuidedBack,
+            enabled = current.ordinal > 0,
+        ) { Text("Back") }
+        Spacer(Modifier.weight(1f))
+        if (current != GuidedStep.DETAILS) {
+            // Stay clickable when gated so the first tap can reveal the coral gate hint.
+            Button(
+                onClick = {
+                    if (nextEnabled) actions.onGuidedNext() else onAttemptNext()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (nextEnabled) Forest else Forest.copy(alpha = 0.38f),
+                    contentColor = Color.White,
+                ),
+            ) { Text("Next") }
         }
     }
 }
@@ -206,6 +288,7 @@ private fun WizardStepper(state: BoardUiState, actions: BoardActions) {
 @Composable
 private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
+    val setter = state.setter
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(availableFeetRules(state)) { rule ->
@@ -221,6 +304,14 @@ private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
             style = MaterialTheme.typography.bodySmall,
             color = BoardMuted,
         )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
+                Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
+            }
+            IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
+                Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
+            }
+        }
     }
 }
 
@@ -271,7 +362,7 @@ private fun HoldStep(
             }
             Spacer(Modifier.weight(1f))
             Text(
-                text = "${draft.assignments.size} holds",
+                text = holdCountLabel(draft.assignments.size),
                 style = MaterialTheme.typography.labelMedium,
                 color = BoardMuted,
             )
@@ -289,6 +380,15 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
+
+        // The board stays on screen here but takes no taps, which is worth saying
+        // out loud — this is where a library edit lands.
+        Text(
+            text = "Holds are locked while you review. " +
+                "Go back to a hold step to add or change them.",
+            style = MaterialTheme.typography.bodySmall,
+            color = BoardMuted,
+        )
 
         HorizontalDivider(color = BoardLine)
 

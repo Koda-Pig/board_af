@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,12 +20,16 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -43,7 +49,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.BoardUiState
 import za.co.boardaf.model.BoulderGrade
@@ -54,8 +63,10 @@ import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.BoardPaper
 
+private const val ACTIVE = "Active"
 private const val ALL = "All"
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProblemsScreen(
     state: BoardUiState,
@@ -66,18 +77,22 @@ fun ProblemsScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var filtersExpanded by rememberSaveable { mutableStateOf(false) }
-    var statusFilter by rememberSaveable { mutableStateOf(ALL) }
+    var statusFilter by rememberSaveable { mutableStateOf(ACTIVE) }
     var gradeFilter by rememberSaveable(state.gradeSystem) { mutableStateOf(ALL) }
     var feetFilter by rememberSaveable { mutableStateOf(ALL) }
     var setterFilter by rememberSaveable { mutableStateOf(ALL) }
     var tagFilter by rememberSaveable { mutableStateOf(ALL) }
+    val focusManager = LocalFocusManager.current
 
     val setters = state.problems.map { it.setter }.filter { it.isNotBlank() }.distinct().sorted()
     val tags = state.problems.flatMap { it.tags }.distinct().sorted()
 
+    val statusOptions = listOf(ACTIVE, ALL) + PublicationState.entries.map { it.label }
+
     val visibleProblems = state.problems.filter { problem ->
         val statusOk = when (statusFilter) {
-            ALL -> problem.publicationState != PublicationState.ARCHIVED
+            ACTIVE -> problem.publicationState != PublicationState.ARCHIVED
+            ALL -> true
             else -> problem.publicationState.label == statusFilter
         }
         statusOk &&
@@ -85,7 +100,22 @@ fun ProblemsScreen(
             (feetFilter == ALL || problem.feetRule.label == feetFilter) &&
             (setterFilter == ALL || problem.setter == setterFilter) &&
             (tagFilter == ALL || tagFilter in problem.tags) &&
-            problem.name.contains(query, ignoreCase = true)
+            problemDisplayName(problem.name).contains(query, ignoreCase = true)
+    }
+
+    val filtering = statusFilter != ACTIVE ||
+        gradeFilter != ALL ||
+        feetFilter != ALL ||
+        setterFilter != ALL ||
+        tagFilter != ALL ||
+        query.isNotBlank()
+
+    val activeFilterChips = buildList {
+        if (statusFilter != ACTIVE) add("Status: $statusFilter" to { statusFilter = ACTIVE })
+        if (gradeFilter != ALL) add("Grade: $gradeFilter" to { gradeFilter = ALL })
+        if (feetFilter != ALL) add("Feet: $feetFilter" to { feetFilter = ALL })
+        if (setterFilter != ALL) add("Setter: $setterFilter" to { setterFilter = ALL })
+        if (tagFilter != ALL) add("Tag: $tagFilter" to { tagFilter = ALL })
     }
 
     LazyColumn(
@@ -97,7 +127,15 @@ fun ProblemsScreen(
     ) {
         item {
             Text("PROBLEM LIBRARY", style = MaterialTheme.typography.labelSmall, color = BoardMuted, fontWeight = FontWeight.Bold)
-            Text("${state.problems.size} problems", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(
+                text = if (filtering) {
+                    "${visibleProblems.size} of ${state.problems.size} problems"
+                } else {
+                    "${visibleProblems.size} problems"
+                },
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
             Text(
                 "Grades are setter estimates.",
                 style = MaterialTheme.typography.bodySmall,
@@ -110,23 +148,20 @@ fun ProblemsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Find a problem") },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotBlank()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             )
         }
         item {
-            TextButton(
-                onClick = {
-                    // A hidden panel must never silently narrow the list.
-                    if (filtersExpanded) {
-                        statusFilter = ALL
-                        gradeFilter = ALL
-                        feetFilter = ALL
-                        setterFilter = ALL
-                        tagFilter = ALL
-                    }
-                    filtersExpanded = !filtersExpanded
-                },
-            ) {
+            TextButton(onClick = { filtersExpanded = !filtersExpanded }) {
                 Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(if (filtersExpanded) "Hide filters" else "Filters")
@@ -136,11 +171,24 @@ fun ProblemsScreen(
                 )
             }
         }
+        if (activeFilterChips.isNotEmpty() && !filtersExpanded) {
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    activeFilterChips.forEach { (label, clear) ->
+                        FilterChip(
+                            selected = true,
+                            onClick = clear,
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+        }
         if (filtersExpanded) {
             item {
                 FilterRow(
                     title = "Status",
-                    options = listOf(ALL) + PublicationState.entries.map { it.label },
+                    options = statusOptions,
                     selected = statusFilter,
                     onSelect = { statusFilter = it },
                 )
@@ -236,6 +284,8 @@ private fun ProblemCard(
     onEdit: () -> Unit,
 ) {
     var menuOpen by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    val displayName = problemDisplayName(problem.name)
 
     Card(
         onClick = onOpen,
@@ -253,17 +303,22 @@ private fun ProblemCard(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        problem.name,
+                        displayName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     Spacer(Modifier.width(8.dp))
                     StatusChip(state = problem.publicationState)
                 }
                 Text(
-                    "${problem.setter} · ${problem.assignments.size} holds · ${problem.feetRule.label}",
+                    "${problem.setter} · ${holdCountLabel(problem.assignments.size)} · ${problem.feetRule.label}",
                     style = MaterialTheme.typography.bodySmall,
                     color = BoardMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Surface(color = BoardDark, shape = RoundedCornerShape(7.dp)) {
@@ -277,7 +332,7 @@ private fun ProblemCard(
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = "Actions for ${problem.name}")
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "Actions for $displayName")
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
@@ -313,8 +368,36 @@ private fun ProblemCard(
                             },
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = {
+                            menuOpen = false
+                            confirmDelete = true
+                        },
+                    )
                 }
             }
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete problem?") },
+            text = {
+                Text("“$displayName” will be permanently removed. This cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        actions.onDeleteProblem(problem.id)
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            },
+        )
     }
 }

@@ -77,9 +77,16 @@ object SetterReducer {
     /** The validator's bound on start and finish holds, enforced here at tap time. */
     const val ROLE_CAP = 2
 
-    /** New drafts walk the wizard from the top; anything with content lands on review. */
+    /**
+     * New empty drafts walk the wizard from the top. Library edits and drafts with
+     * enough content to persist land on details & review.
+     */
     fun start(draft: DraftProblem): SetterState {
-        val entry = if (draft.hasContent) GuidedStep.DETAILS else GuidedStep.FEET_RULE
+        val entry = if (draft.editingProblemId != null || draft.hasContent) {
+            GuidedStep.DETAILS
+        } else {
+            GuidedStep.FEET_RULE
+        }
         return SetterState(
             draft = draft,
             guidedStep = entry,
@@ -98,6 +105,17 @@ object SetterReducer {
         GuidedStep.entries.firstOrNull { !stepSatisfied(draft, it) }
 
     fun tapHold(state: SetterState, holdId: String, board: ConfiguredBoard): TapResult {
+        // Feet rule and details & review assign no role and render no palette, so a
+        // tap there would land on whatever role happened to be active — START on a
+        // library edit — and reject foot-only holds for a reason the setter can't see.
+        if (state.guidedStep.roleForStep == null) {
+            return TapResult(
+                state,
+                notice = "Holds are locked on ${state.guidedStep.title}. " +
+                    "Go back to ${GuidedStep.OTHER.title} to change them.",
+            )
+        }
+
         val role = state.activeRole
         val existing = state.draft.assignments.firstOrNull { it.holdId == holdId }
 
@@ -117,7 +135,7 @@ object SetterReducer {
                 TapRejection(
                     holdId = holdId,
                     role = role,
-                    message = "$holdId is a foot-only ${hold.zone.label.lowercase()} hold — it can't be a ${role.label.lowercase()} hold.",
+                    message = "That hold is foot-only — it can't be a ${role.label.lowercase()} hold.",
                     offerFootInstead = hold.capability.allowsFeet &&
                         state.draft.feetRule.usesFootMarks &&
                         existing?.role != ProblemHoldRole.FOOT_ONLY,
@@ -130,7 +148,7 @@ object SetterReducer {
                 TapRejection(
                     holdId = holdId,
                     role = role,
-                    message = "$holdId can't be used with feet.",
+                    message = "That hold can't be used with feet.",
                     offerFootInstead = false,
                 ),
             )
@@ -158,7 +176,7 @@ object SetterReducer {
                     assignments + ProblemAssignment(holdId, role)
                 }
             },
-            notice = existing?.let { "$holdId changed from ${it.role.label} to ${role.label}." },
+            notice = existing?.let { "Hold changed from ${it.role.label} to ${role.label}." },
         )
     }
 
