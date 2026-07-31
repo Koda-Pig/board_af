@@ -7,7 +7,7 @@ data class PixelSize(val width: Float, val height: Float)
 data class PixelPoint(val x: Float, val y: Float)
 
 object BoardGeometry {
-    const val IMAGE_ASPECT_RATIO = 3f / 4f
+    const val IMAGE_ASPECT_RATIO = 1080f / 1586f
 
     fun imageSizeForWidth(widthPixels: Int): PixelSize = imageSizeForWidth(widthPixels.toFloat())
 

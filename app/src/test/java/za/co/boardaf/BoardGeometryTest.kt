@@ -18,7 +18,7 @@ class BoardGeometryTest {
 
             assertEquals(point.x, center.x / imageSize.width, 0.0001f)
             assertEquals(point.y, center.y / imageSize.height, 0.0001f)
-            assertEquals(width * 4f / 3f, imageSize.height, 0.0001f)
+            assertEquals(width * 1586f / 1080f, imageSize.height, 0.001f)
         }
     }
 
@@ -37,20 +37,20 @@ class BoardGeometryTest {
     @Test
     fun `mapped hold centers match source photo pixels`() {
         val expectedCenters = listOf(
-            Triple("h01", 154f, 81f), Triple("h02", 405f, 77f), Triple("h03", 598f, 75f), Triple("h04", 801f, 74f),
-            Triple("h05", 114f, 238f), Triple("h06", 306f, 209f), Triple("h07", 649f, 234f), Triple("h08", 751f, 233f),
-            Triple("h09", 845f, 280f), Triple("h10", 305f, 277f), Triple("h11", 404f, 278f), Triple("h12", 504f, 272f),
-            Triple("h13", 697f, 355f), Triple("h14", 254f, 396f), Triple("h15", 595f, 394f), Triple("h16", 406f, 435f),
-            Triple("h17", 697f, 433f), Triple("h18", 157f, 477f), Triple("h19", 356f, 514f), Triple("h20", 502f, 479f),
-            Triple("h21", 644f, 511f), Triple("h22", 846f, 507f), Triple("h23", 456f, 550f), Triple("h24", 754f, 588f),
-            Triple("h25", 308f, 592f), Triple("h26", 116f, 678f), Triple("h27", 502f, 670f), Triple("h28", 843f, 705f),
-            Triple("h29", 306f, 744f), Triple("h30", 457f, 785f), Triple("h31", 648f, 785f), Triple("h32", 155f, 866f),
-            Triple("h33", 457f, 902f), Triple("h34", 600f, 944f), Triple("h35", 800f, 941f), Triple("h36", 304f, 983f),
-            Triple("h37", 257f, 1107f), Triple("h38", 442f, 1108f), Triple("h39", 708f, 1109f), Triple("h40", 157f, 1204f),
-            Triple("h41", 300f, 1205f), Triple("h42", 522f, 1208f), Triple("h43", 807f, 1208f),
+            Triple("h01", 107f, 42f), Triple("h02", 444f, 38f), Triple("h03", 703f, 36f), Triple("h04", 974f, 36f),
+            Triple("h05", 54f, 254f), Triple("h06", 311f, 215f), Triple("h07", 770f, 251f), Triple("h08", 906f, 250f),
+            Triple("h09", 1031f, 313f), Triple("h10", 310f, 307f), Triple("h11", 442f, 309f), Triple("h12", 576f, 301f),
+            Triple("h13", 834f, 413f), Triple("h14", 242f, 466f), Triple("h15", 697f, 465f), Triple("h16", 445f, 519f),
+            Triple("h17", 833f, 517f), Triple("h18", 112f, 575f), Triple("h19", 378f, 625f), Triple("h20", 573f, 578f),
+            Triple("h21", 762f, 621f), Triple("h22", 1031f, 616f), Triple("h23", 512f, 673f), Triple("h24", 908f, 724f),
+            Triple("h25", 314f, 729f), Triple("h26", 58f, 843f), Triple("h27", 573f, 833f), Triple("h28", 1026f, 880f),
+            Triple("h29", 312f, 931f), Triple("h30", 513f, 985f), Triple("h31", 767f, 986f), Triple("h32", 111f, 1093f),
+            Triple("h33", 513f, 1140f), Triple("h34", 900f, 984f), Triple("h35", 967f, 1192f), Triple("h36", 309f, 1248f),
+            Triple("h37", 247f, 1411f), Triple("h38", 493f, 1412f), Triple("h39", 844f, 1413f), Triple("h40", 115f, 1539f),
+            Triple("h41", 304f, 1540f), Triple("h42", 598f, 1544f), Triple("h43", 974f, 1543f),
         )
         val actualById = BoardDefaults.holds.associateBy { it.id }
-        val sourceImageSize = PixelSize(width = 960f, height = 1280f)
+        val sourceImageSize = PixelSize(width = 1080f, height = 1586f)
 
         expectedCenters.forEach { (id, expectedX, expectedY) ->
             val center = BoardGeometry.centerInPixels(

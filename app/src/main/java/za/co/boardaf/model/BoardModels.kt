@@ -62,21 +62,21 @@ object BoardDefaults {
     const val BOARD_ANGLE_DEGREES = 20
     const val BOARD_HEIGHT_METERS = 4.8f
 
-    /** Midway between the h36 row (y=983) and the h37 kicker row (y=1107) in source pixels. */
-    val DEFAULT_KICKBOARD_TOP_Y = 1045f / SOURCE_IMAGE_HEIGHT
+    /** Midway between the h36 row (y=1248) and the h37 kicker row (y=1411) in source pixels. */
+    val DEFAULT_KICKBOARD_TOP_Y = 1329f / SOURCE_IMAGE_HEIGHT
 
     val holds = listOf(
-        hold("h01", 154f, 81f), hold("h02", 405f, 77f), hold("h03", 598f, 75f), hold("h04", 801f, 74f),
-        hold("h05", 114f, 238f), hold("h06", 306f, 209f), hold("h07", 649f, 234f), hold("h08", 751f, 233f), hold("h09", 845f, 280f),
-        hold("h10", 305f, 277f), hold("h11", 404f, 278f), hold("h12", 504f, 272f), hold("h13", 697f, 355f),
-        hold("h14", 254f, 396f), hold("h15", 595f, 394f), hold("h16", 406f, 435f), hold("h17", 697f, 433f),
-        hold("h18", 157f, 477f), hold("h19", 356f, 514f), hold("h20", 502f, 479f), hold("h21", 644f, 511f), hold("h22", 846f, 507f),
-        hold("h23", 456f, 550f), hold("h24", 754f, 588f), hold("h25", 308f, 592f),
-        hold("h26", 116f, 678f), hold("h27", 502f, 670f), hold("h28", 843f, 705f),
-        hold("h29", 306f, 744f), hold("h30", 457f, 785f), hold("h31", 648f, 785f),
-        hold("h32", 155f, 866f), hold("h33", 457f, 902f), hold("h34", 600f, 944f), hold("h35", 800f, 941f), hold("h36", 304f, 983f),
-        hold("h37", 257f, 1107f), hold("h38", 442f, 1108f), hold("h39", 708f, 1109f),
-        hold("h40", 157f, 1204f), hold("h41", 300f, 1205f), hold("h42", 522f, 1208f), hold("h43", 807f, 1208f),
+        hold("h01", 107f, 42f), hold("h02", 444f, 38f), hold("h03", 703f, 36f), hold("h04", 974f, 36f),
+        hold("h05", 54f, 254f), hold("h06", 311f, 215f), hold("h07", 770f, 251f), hold("h08", 906f, 250f), hold("h09", 1031f, 313f),
+        hold("h10", 310f, 307f), hold("h11", 442f, 309f), hold("h12", 576f, 301f), hold("h13", 834f, 413f),
+        hold("h14", 242f, 466f), hold("h15", 697f, 465f), hold("h16", 445f, 519f), hold("h17", 833f, 517f),
+        hold("h18", 112f, 575f), hold("h19", 378f, 625f), hold("h20", 573f, 578f), hold("h21", 762f, 621f), hold("h22", 1031f, 616f),
+        hold("h23", 512f, 673f), hold("h24", 908f, 724f), hold("h25", 314f, 729f),
+        hold("h26", 58f, 843f), hold("h27", 573f, 833f), hold("h28", 1026f, 880f),
+        hold("h29", 312f, 931f), hold("h30", 513f, 985f), hold("h31", 767f, 986f),
+        hold("h32", 111f, 1093f), hold("h33", 513f, 1140f), hold("h34", 900f, 984f), hold("h35", 967f, 1192f), hold("h36", 309f, 1248f),
+        hold("h37", 247f, 1411f), hold("h38", 493f, 1412f), hold("h39", 844f, 1413f),
+        hold("h40", 115f, 1539f), hold("h41", 304f, 1540f), hold("h42", 598f, 1544f), hold("h43", 974f, 1543f),
     )
 
     val problems: List<Problem> = run {
@@ -173,6 +173,6 @@ object BoardDefaults {
 
     private fun assign(id: String, role: ProblemHoldRole) = ProblemAssignment(id, role)
 
-    private const val SOURCE_IMAGE_WIDTH = 960f
-    private const val SOURCE_IMAGE_HEIGHT = 1280f
+    private const val SOURCE_IMAGE_WIDTH = 1080f
+    private const val SOURCE_IMAGE_HEIGHT = 1586f
 }
