@@ -153,7 +153,7 @@ fun BoardScreen(
             val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
             BottomSheetScaffold(
                 scaffoldState = scaffoldState,
-                sheetPeekHeight = 200.dp,
+                sheetPeekHeight = 100.dp,
                 sheetContainerColor = MaterialTheme.colorScheme.surface,
                 sheetContent = {
                     Column(
