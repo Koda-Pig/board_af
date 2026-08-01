@@ -171,10 +171,6 @@ fun BoardScreen(
                                 feetRule = problem.feetRule,
                                 footMarkCount = problem.assignments.count { it.role == ProblemHoldRole.FOOT_ONLY },
                             )
-                            StartFinishExplanation(
-                                startRule = problem.startRule,
-                                finishRule = problem.finishRule,
-                            )
                             ProblemDetails(
                                 problem = problem,
                                 state = state,
@@ -343,7 +339,6 @@ private fun SidePanel(state: BoardUiState, actions: BoardActions, problem: Probl
                 feetRule = problem.feetRule,
                 footMarkCount = problem.assignments.count { it.role == ProblemHoldRole.FOOT_ONLY },
             )
-            StartFinishExplanation(startRule = problem.startRule, finishRule = problem.finishRule)
             ProblemDetails(problem = problem, state = state, actions = actions)
         }
     }
