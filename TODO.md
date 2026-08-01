@@ -49,7 +49,10 @@ when read-only.
 ### Dark theme (F28) — done
 
 `BoardPaper` / `BoardLine` / `BoardMuted` / `BoardDark` no longer appear as
-hardcoded UI colours. Body and label text routes through
+hardcoded colours in *content*. The app chrome is the deliberate exception: the
+top app bar and navigation bar in `BoardAfApp` stay `BoardDark`/`BoardPaper` in
+both schemes, and `ProblemMarker` uses `BoardDark` as a marker colour — so a
+grep for those names still returns hits. Body and label text routes through
 `MaterialTheme.colorScheme.onSurfaceVariant`, dividers and borders through
 `outline`, and the grade pill through the new `inverseSurface` /
 `inverseOnSurface` roles so it flips with the scheme. `StatusChip` pairs themed
@@ -114,7 +117,7 @@ transform. Nothing to change — treat the original finding as stale.
       mechanical Firestore batch mapping. Worth doing with the refactor, not
       before it.
 
-Unit tests: 143 total. Instrumented: 9.
+Unit tests: 148 total (`./gradlew testDebugUnitTest`, 0 failures). Instrumented: 9.
 
 ### Deferred from the original review
 

@@ -2,11 +2,11 @@ package za.co.boardaf.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
@@ -16,7 +16,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -29,8 +28,6 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -54,7 +50,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import za.co.boardaf.BoardEvent
 import za.co.boardaf.BoardViewModel
-import za.co.boardaf.R
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.FeetRule
@@ -109,6 +104,9 @@ data class BoardActions(
     val onCloudSignOut: () -> Unit = {},
     val onCloudSyncNow: () -> Unit = {},
 )
+
+/** Material's default navigation bar is 80dp; trimming 8dp buys the board photo height. */
+private val NAV_BAR_HEIGHT = 72.dp
 
 private enum class Destination(
     val route: String,
@@ -265,68 +263,26 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = { SnackbarHost(snackbarHostState) },
-            topBar = {
-                TopAppBar(
-                    title = {
-                        if (currentDestination == Destination.BOARD && state.isSetting) {
-                            Text(
-                                text = "Set a problem",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_logo_crimp),
-                                    contentDescription = "Board AF",
-                                    modifier = Modifier.size(34.dp),
-                                    tint = BoardPaper,
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = currentDestination.label,
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        val onBoardOrLibrary = currentDestination == Destination.BOARD ||
-                            currentDestination == Destination.PROBLEMS
-                        if (onBoardOrLibrary) {
-                            IconButton(
-                                // Stays available during a session: sessions now
-                                // survive tab switches, so hiding this would strand
-                                // the user on the library with no way to start.
-                                // Restarting silently was the original bug, so a
-                                // live session asks first.
-                                onClick = {
-                                    if (state.isSetting) {
-                                        confirmNewSession = true
-                                    } else {
-                                        viewModel.startSetting()
-                                        if (currentDestination != Destination.BOARD) {
-                                            navigateToBoard()
-                                        }
-                                    }
-                                },
-                            ) {
-                                Icon(Icons.Rounded.Add, contentDescription = "New problem")
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = BoardDark,
-                        titleContentColor = BoardPaper,
-                        actionIconContentColor = Sage,
-                    ),
-                )
-            },
+            // No top bar: the board photo gets that vertical space instead.
             bottomBar = {
-                NavigationBar(containerColor = BoardDark) {
+                val navBarColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = BoardDark,
+                    selectedTextColor = Sage,
+                    indicatorColor = Sage,
+                    unselectedIconColor = BoardPaper.copy(alpha = 0.58f),
+                    unselectedTextColor = BoardPaper.copy(alpha = 0.58f),
+                )
+                val bottomInset = WindowInsets.navigationBars.asPaddingValues()
+                    .calculateBottomPadding()
+                NavigationBar(
+                    containerColor = BoardDark,
+                    // 8dp shorter than the Material default (80dp), on top of the
+                    // system gesture inset the bar still has to clear.
+                    modifier = Modifier.height(NAV_BAR_HEIGHT + bottomInset),
+                ) {
                     Destination.entries.forEach { destination ->
-                        val selected = currentDestination == destination
                         NavigationBarItem(
-                            selected = selected,
+                            selected = currentDestination == destination,
                             onClick = {
                                 // Keep the setter session alive across tabs so returning
                                 // to Board resumes where the user left off (draft is autosaved).
@@ -340,14 +296,28 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                             },
                             icon = { Icon(destination.icon, contentDescription = destination.label) },
                             label = { Text(destination.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = BoardDark,
-                                selectedTextColor = Sage,
-                                indicatorColor = Sage,
-                                unselectedIconColor = BoardPaper.copy(alpha = 0.58f),
-                                unselectedTextColor = BoardPaper.copy(alpha = 0.58f),
-                            ),
+                            colors = navBarColors,
                         )
+                        if (destination == Destination.PROBLEMS) {
+                            NavigationBarItem(
+                                selected = false,
+                                // Restarting a live session silently was the original
+                                // bug, so a live session asks first.
+                                onClick = {
+                                    if (state.isSetting) {
+                                        confirmNewSession = true
+                                    } else {
+                                        viewModel.startSetting()
+                                        if (currentDestination != Destination.BOARD) {
+                                            navigateToBoard()
+                                        }
+                                    }
+                                },
+                                icon = { Icon(Icons.Rounded.Add, contentDescription = "New problem") },
+                                label = { Text("New") },
+                                colors = navBarColors,
+                            )
+                        }
                     }
                 }
             },

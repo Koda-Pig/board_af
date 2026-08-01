@@ -42,6 +42,12 @@ Problems carry a lifecycle (`DRAFT`, `NEEDS_REVIEW`, `PUBLISHED`, `BENCHMARK`,
 successful-forerun confirmation. Kickboard holds (h37-h43 on the bundled board)
 are foot-only and can never host a start, regular, or finish role.
 
+The wall is adjustable from 0° to 90°, so **wall angle is per-problem data**, not
+a board setting: every problem carries its own `angleDegrees` (0–90, default 20,
+set on a 5° slider) and it is shown alongside the grade on the problem card, the
+board header, and the details summary. Older records decode at the default
+incline via the additive `angle` field in `SnapshotCodec`.
+
 ## Open and run
 
 1. Open this repository in Android Studio.
@@ -69,8 +75,9 @@ image. Screen width only changes the size of that shared box, so the bitmap and
 overlays scale together.
 
 Because the aspect ratio is fixed, callers must never hand `BoardSurface` a box
-of arbitrary shape — on the phone layout it is sized height-first and centred so
-the wall keeps its proportions instead of stretching.
+of arbitrary shape — on the phone layout it is sized width-first (the board fills
+the device width and the column scrolls the overflow) so the wall keeps its
+proportions instead of stretching.
 
 Pinch zoom and pan transform the photo and marker anchors through the same
 `BoardTransform`, clamped so the board can never leave the screen; stored
@@ -89,7 +96,20 @@ phone widths (the only supported viewport).
 
 ## Setting flow
 
-Creating, editing, or duplicating a problem runs a five-step wizard on the
+Two modes are selectable when a session starts, and the choice is remembered as a
+preference.
+
+**Quick set** is a single canvas: taps toggle hold membership with no steps and
+no gating. Roles are inferred — the lowest tapped row becomes start and the
+topmost becomes finish (ties included, so a matched finish falls out naturally),
+everything between is regular, and kickboard holds become foot-only because the
+board says they can only be feet. The feet rule is inferred too (Marked feet only
+when foot marks exist, Feet follow marked otherwise) and stops being inferred
+once the setter picks one by hand. Undo/redo operates on the hold set, one entry
+per tap; inferred role flips never land on the stack. Every inferred role stays
+overridable, and publishing runs the same validation and forerun gate.
+
+**Guided steps** runs a five-step wizard on the
 board screen: **feet rule → start holds → other holds → finish holds →
 details & review**. New problems start at the feet rule; sessions on existing
 problems (anything already in the library) land directly on details & review
@@ -113,12 +133,14 @@ handled instead.
 The only supported viewport is **mobile phone**. Tablet, iPad, and large-screen
 layouts are out of scope; do not plan or build for them.
 
-On phones the board screen is a `BottomSheetScaffold`: the board keeps the
-viewport above a 200 dp peek that shows the wizard step chips, active role, and
-Back/Next, so the wall and its controls are never mutually exclusive. Dragging
-the sheet up reveals the details form or the problem's rules. (A ≥ 840 dp
-side-panel branch may still exist in code; ignore it — phone layout is the
-product.)
+On phones the board screen is a `BottomSheetScaffold` over a 200 dp peek that
+shows the wizard step chips, active role, and Back/Next, so the wall and its
+controls are never mutually exclusive. The board is sized width-first and the
+content column scrolls the overflow the peek leaves — a height-first fit kept
+everything on screen at once but rendered the wall too small to read or tap.
+Dragging the sheet up reveals the details form or the problem's rules. (A
+≥ 840 dp side-panel branch may still exist in code; ignore it — phone layout is
+the product.)
 
 While viewing (not setting), a horizontal drag across the board moves to the
 adjacent problem — 64 dp of travel, damped follow-the-finger feedback, clamped at
@@ -126,8 +148,14 @@ the ends rather than wrapping.
 
 ## Library
 
-Problems can be searched, filtered by status, grade, feet rule, setter, and tag,
-and acted on from the card overflow: edit, duplicate, archive, delete. Archive is
-reversible and offers Undo that restores the exact prior state; delete is
-permanent and confirms first. The default status filter is **Active**
-(everything except archived); a separate **All** includes archived.
+Problems can be searched, filtered by status, grade, angle, feet rule, setter,
+and tag, and acted on from the card overflow: edit, duplicate, archive, delete.
+Archive is reversible and offers Undo that restores the exact prior state; delete
+is permanent and confirms first. The default status filter is **Active**
+(everything except archived); a separate **All** includes archived. The angle
+filter only appears once the library holds more than one angle.
+
+Filters live in a `ModalBottomSheet` rather than expanding inline: options wrap
+in a `FlowRow` so all seven status values are visible at once, and the sheet
+dismisses through a "Show N problems" button. Active filters stay visible as
+chips on the list itself.
