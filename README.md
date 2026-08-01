@@ -4,6 +4,9 @@ A small, offline-first app for setting and climbing problems on a single home bo
 
 This repository contains only the native Android application. It intentionally does not include climb timing, attempt logging, or a training-session log.
 
+**Supported viewport: mobile phone only.** Tablet, iPad, and wider layouts are
+not targets — do not design or spend future work on them.
+
 ## Stack
 
 - Kotlin
@@ -76,7 +79,7 @@ coordinates stay normalized and interactive targets stay 48 dp at every scale
 and the transform survives rotation.
 
 The geometry is covered by `BoardGeometryTest` and `BoardTransformTest` at
-phone, tablet, and large-screen widths.
+phone widths (the only supported viewport).
 
 ## Project layout
 
@@ -107,11 +110,15 @@ handled instead.
 
 ## Screen layout
 
+The only supported viewport is **mobile phone**. Tablet, iPad, and large-screen
+layouts are out of scope; do not plan or build for them.
+
 On phones the board screen is a `BottomSheetScaffold`: the board keeps the
 viewport above a 200 dp peek that shows the wizard step chips, active role, and
 Back/Next, so the wall and its controls are never mutually exclusive. Dragging
-the sheet up reveals the details form or the problem's rules. At ≥ 840 dp the
-board and a 400 dp side panel sit in a `Row` instead.
+the sheet up reveals the details form or the problem's rules. (A ≥ 840 dp
+side-panel branch may still exist in code; ignore it — phone layout is the
+product.)
 
 While viewing (not setting), a horizontal drag across the board moves to the
 adjacent problem — 64 dp of travel, damped follow-the-finger feedback, clamped at
