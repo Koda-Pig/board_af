@@ -25,8 +25,6 @@ class SyncCodecTest {
         grade = BoulderGrade.F6B,
         accent = Accent.SKY,
         setter = "Maya",
-        note = "Stay square.",
-        tags = listOf("Project"),
         feetRule = FeetRule.OPEN_KICKBOARD,
         startRule = StartRule.SPLIT_TWO,
         publicationState = PublicationState.PUBLISHED,

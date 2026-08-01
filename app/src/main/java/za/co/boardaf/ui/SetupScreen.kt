@@ -73,10 +73,7 @@ fun SetupScreen(
     fun demotedBy(proposed: BoardSetup): List<String> {
         val proposedBoard = ConfiguredBoard.from(proposed)
         return state.problems
-            .filter {
-                it.publicationState == PublicationState.PUBLISHED ||
-                    it.publicationState == PublicationState.BENCHMARK
-            }
+            .filter { it.publicationState == PublicationState.PUBLISHED }
             .filter { ProblemValidator.hasErrors(ProblemValidator.validate(it, proposedBoard)) }
             .map { problemDisplayName(it.name) }
     }

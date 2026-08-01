@@ -204,7 +204,7 @@ class BoardViewModel @JvmOverloads constructor(
     /**
      * Exact inverse of [archiveProblem]. Distinct from [unarchiveProblem], which
      * recomputes a state for a problem restored long after the fact — that would
-     * silently demote a benchmark to published.
+     * silently demote a published problem to draft.
      */
     fun restoreArchived(undo: BoardEvent.ArchiveUndo) = updateProblem(undo.problemId) {
         it.copy(publicationState = undo.previousState)
@@ -245,14 +245,6 @@ class BoardViewModel @JvmOverloads constructor(
         )
         persist()
         emit(BoardEvent.Message("Problem deleted."))
-    }
-
-    fun toggleBenchmark(problemId: String) = updateProblem(problemId) { problem ->
-        when (problem.publicationState) {
-            PublicationState.PUBLISHED -> problem.copy(publicationState = PublicationState.BENCHMARK)
-            PublicationState.BENCHMARK -> problem.copy(publicationState = PublicationState.PUBLISHED)
-            else -> problem
-        }
     }
 
     /** Publish directly from the library/detail once a problem is valid and forerun. */
@@ -393,20 +385,6 @@ class BoardViewModel @JvmOverloads constructor(
 
     fun setDraftAccent(accent: Accent) {
         updateDraft { it.copy(accent = accent) }
-        autosaveDraft()
-    }
-
-    fun setDraftNote(note: String) {
-        updateDraft { it.copy(note = note) }
-        autosaveDraft()
-    }
-
-    fun toggleDraftTag(tag: String) {
-        updateDraft { draft ->
-            draft.copy(
-                tags = if (tag in draft.tags) draft.tags - tag else draft.tags + tag,
-            )
-        }
         autosaveDraft()
     }
 

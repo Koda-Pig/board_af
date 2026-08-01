@@ -66,6 +66,12 @@ data class SetterState(
     val feetRuleTouched: Boolean = false,
     val undoStack: List<List<ProblemAssignment>> = emptyList(),
     val redoStack: List<List<ProblemAssignment>> = emptyList(),
+    /**
+     * Whether this session was opened as a new problem rather than an edit. Sticks
+     * for the whole session — autosave gives the draft an id, but the setter is
+     * still on the "New" flow they started, which is what the nav bar highlights.
+     */
+    val isNewProblem: Boolean = false,
 ) {
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
@@ -110,6 +116,7 @@ object SetterReducer {
             // An edited problem's feet rule is a past decision, not this session's
             // inference output — treat it as touched so quick taps don't rewrite it.
             feetRuleTouched = draft.editingProblemId != null || draft.hasContent,
+            isNewProblem = draft.editingProblemId == null,
         )
     }
 

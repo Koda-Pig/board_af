@@ -289,15 +289,20 @@ class SetterReducerTest {
     }
 
     @Test
-    fun `a name or a note alone is content even with no holds`() {
+    fun `a name alone is content even with no holds`() {
         assertTrue(DraftProblem(name = "Sloper traverse").hasContent)
-        assertTrue(DraftProblem(note = "reachy off the second").hasContent)
     }
 
     @Test
     fun `a session with existing content lands on details and review`() {
         val state = SetterReducer.start(draftWithContent())
         assertEquals(GuidedStep.DETAILS, state.guidedStep)
+    }
+
+    @Test
+    fun `only a session without an existing problem counts as new`() {
+        assertTrue(SetterReducer.start(DraftProblem()).isNewProblem)
+        assertFalse(SetterReducer.start(DraftProblem(editingProblemId = "p")).isNewProblem)
     }
 
     @Test

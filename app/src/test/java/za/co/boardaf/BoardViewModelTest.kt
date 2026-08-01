@@ -60,7 +60,6 @@ class BoardViewModelTest {
         grade = BoulderGrade.F6A,
         accent = Accent.SKY,
         setter = "You",
-        note = "",
         publicationState = state,
         forerunConfirmedAt = 1L,
         assignments = listOf(
@@ -145,38 +144,38 @@ class BoardViewModelTest {
 
     @Test
     fun `archiveProblem emits an undo payload carrying the previous state`() = runTest {
-        val store = FakeStore(snapshotOf(problem("bench", state = PublicationState.BENCHMARK)))
+        val store = FakeStore(snapshotOf(problem("draft-a", state = PublicationState.DRAFT)))
         val vm = viewModel(store)
         val events = mutableListOf<BoardEvent>()
         val job = launchCollect(vm, events)
 
-        vm.archiveProblem("bench")
+        vm.archiveProblem("draft-a")
 
         val message = events.filterIsInstance<BoardEvent.Message>().single()
         assertEquals("Undo", message.actionLabel)
         assertEquals(
-            BoardEvent.ArchiveUndo("bench", PublicationState.BENCHMARK),
+            BoardEvent.ArchiveUndo("draft-a", PublicationState.DRAFT),
             message.undoArchive,
         )
         job.cancel()
     }
 
     @Test
-    fun `restoreArchived puts a benchmark back as a benchmark`() = runTest {
-        val store = FakeStore(snapshotOf(problem("bench", state = PublicationState.BENCHMARK)))
+    fun `restoreArchived puts a draft back as a draft`() = runTest {
+        val store = FakeStore(snapshotOf(problem("draft-a", state = PublicationState.DRAFT)))
         val vm = viewModel(store)
 
-        vm.archiveProblem("bench")
+        vm.archiveProblem("draft-a")
         assertEquals(
             PublicationState.ARCHIVED,
             vm.state.value.problems.single().publicationState,
         )
 
-        vm.restoreArchived(BoardEvent.ArchiveUndo("bench", PublicationState.BENCHMARK))
+        vm.restoreArchived(BoardEvent.ArchiveUndo("draft-a", PublicationState.DRAFT))
 
         // unarchiveProblem would have demoted this to PUBLISHED; undo must not.
         assertEquals(
-            PublicationState.BENCHMARK,
+            PublicationState.DRAFT,
             vm.state.value.problems.single().publicationState,
         )
     }

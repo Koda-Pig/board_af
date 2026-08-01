@@ -82,11 +82,9 @@ fun ProblemsScreen(
     var angleFilter by rememberSaveable { mutableStateOf(ALL) }
     var feetFilter by rememberSaveable { mutableStateOf(ALL) }
     var setterFilter by rememberSaveable { mutableStateOf(ALL) }
-    var tagFilter by rememberSaveable { mutableStateOf(ALL) }
     val focusManager = LocalFocusManager.current
 
     val setters = state.problems.map { it.setter }.filter { it.isNotBlank() }.distinct().sorted()
-    val tags = state.problems.flatMap { it.tags }.distinct().sorted()
     // The angle filter only earns its row once the library actually spans inclines.
     val angles = state.problems.map { it.angleDegrees }.distinct().sorted()
 
@@ -103,7 +101,6 @@ fun ProblemsScreen(
             (angleFilter == ALL || "${problem.angleDegrees}°" == angleFilter) &&
             (feetFilter == ALL || problem.feetRule.label == feetFilter) &&
             (setterFilter == ALL || problem.setter == setterFilter) &&
-            (tagFilter == ALL || tagFilter in problem.tags) &&
             problemDisplayName(problem.name).contains(query, ignoreCase = true)
     }
 
@@ -112,7 +109,6 @@ fun ProblemsScreen(
         angleFilter != ALL ||
         feetFilter != ALL ||
         setterFilter != ALL ||
-        tagFilter != ALL ||
         query.isNotBlank()
 
     val activeFilterChips = buildList {
@@ -121,7 +117,6 @@ fun ProblemsScreen(
         if (angleFilter != ALL) add("Angle: $angleFilter" to { angleFilter = ALL })
         if (feetFilter != ALL) add("Feet: $feetFilter" to { feetFilter = ALL })
         if (setterFilter != ALL) add("Setter: $setterFilter" to { setterFilter = ALL })
-        if (tagFilter != ALL) add("Tag: $tagFilter" to { tagFilter = ALL })
     }
 
     LazyColumn(
@@ -262,14 +257,6 @@ fun ProblemsScreen(
                         onSelect = { setterFilter = it },
                     )
                 }
-                if (tags.isNotEmpty()) {
-                    FilterSection(
-                        title = "Tag",
-                        options = listOf(ALL) + tags,
-                        selected = tagFilter,
-                        onSelect = { tagFilter = it },
-                    )
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -281,7 +268,6 @@ fun ProblemsScreen(
                             angleFilter = ALL
                             feetFilter = ALL
                             setterFilter = ALL
-                            tagFilter = ALL
                         },
                         enabled = activeFilterChips.isNotEmpty(),
                     ) { Text("Clear all") }

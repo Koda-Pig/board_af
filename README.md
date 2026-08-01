@@ -37,8 +37,8 @@ A problem separates four concepts that the first version conflated:
 4. the problem-wide feet rule (`MARKED_ONLY`, `OPEN_KICKBOARD`,
    `FEET_FOLLOW_MARKED`, `ANY_FEET`, `CAMPUS`).
 
-Problems carry a lifecycle (`DRAFT`, `NEEDS_REVIEW`, `PUBLISHED`, `BENCHMARK`,
-`ARCHIVED`); publishing requires zero validation errors plus an explicit
+Problems carry a lifecycle (`DRAFT`, `NEEDS_REVIEW`, `PUBLISHED`, `ARCHIVED`);
+publishing requires zero validation errors plus an explicit
 successful-forerun confirmation. Kickboard holds (h37-h43 on the bundled board)
 are foot-only and can never host a start, regular, or finish role.
 
@@ -148,8 +148,8 @@ the ends rather than wrapping.
 
 ## Library
 
-Problems can be searched, filtered by status, grade, angle, feet rule, setter,
-and tag, and acted on from the card overflow: edit, duplicate, archive, delete.
+Problems can be searched, filtered by status, grade, angle, feet rule, and
+setter, and acted on from the card overflow: edit, duplicate, archive, delete.
 Archive is reversible and offers Undo that restores the exact prior state; delete
 is permanent and confirms first. The default status filter is **Active**
 (everything except archived); a separate **All** includes archived. The angle

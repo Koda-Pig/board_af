@@ -24,7 +24,6 @@ class SyncPlannerTombstoneRetirementTest {
         grade = BoulderGrade.F6A,
         accent = Accent.SKY,
         setter = "You",
-        note = "",
     )
 
     private fun snapshot(deleted: Set<String>, vararg problems: Problem) = LibrarySnapshot(

@@ -24,13 +24,12 @@ class SyncPlannerTest {
 
     private val now = 1_000_000L
 
-    private fun problem(id: String, name: String = id, note: String = "") = Problem(
+    private fun problem(id: String, name: String = id, setter: String = "You") = Problem(
         id = id,
         name = name,
         grade = BoulderGrade.F6A,
         accent = Accent.SKY,
-        setter = "You",
-        note = note,
+        setter = setter,
     )
 
     private fun snapshot(vararg problems: Problem) = LibrarySnapshot(
@@ -125,7 +124,7 @@ class SyncPlannerTest {
     @Test
     fun `local edit with unchanged remote pushes with bumped revision`() {
         val base = problem("a")
-        val edited = base.copy(note = "new beta")
+        val edited = base.copy(setter = "new beta")
         val local = snapshot(edited)
         val remote = RemoteLibrary(
             board = remoteBoard(local),
@@ -146,7 +145,7 @@ class SyncPlannerTest {
     @Test
     fun `remote edit with unchanged local is adopted`() {
         val base = problem("a")
-        val remoteEdit = base.copy(note = "edited elsewhere")
+        val remoteEdit = base.copy(setter = "edited elsewhere")
         val local = snapshot(base)
         val remote = RemoteLibrary(
             board = remoteBoard(local),
@@ -165,7 +164,7 @@ class SyncPlannerTest {
     @Test
     fun `new remote problem is adopted without pushes`() {
         val local = snapshot(problem("a"))
-        val incoming = problem("b", note = "from the other device")
+        val incoming = problem("b", setter = "from the other device")
         val remote = mirroredRemote(local).let {
             it.copy(problems = it.problems + ("b" to remoteRecord(incoming)))
         }
@@ -179,8 +178,8 @@ class SyncPlannerTest {
     @Test
     fun `conflicting edits keep both versions`() {
         val base = problem("a", name = "Tidepool")
-        val localEdit = base.copy(note = "local beta")
-        val remoteEdit = base.copy(note = "remote beta")
+        val localEdit = base.copy(setter = "local beta")
+        val remoteEdit = base.copy(setter = "remote beta")
         val local = snapshot(localEdit)
         val remote = RemoteLibrary(
             board = remoteBoard(local),
@@ -195,10 +194,10 @@ class SyncPlannerTest {
 
         val merged = plan.mergedSnapshot!!
         // Remote content keeps the original id.
-        assertEquals("remote beta", merged.problems.first { it.id == "a" }.note)
+        assertEquals("remote beta", merged.problems.first { it.id == "a" }.setter)
         // Local content survives as a conflict copy that is pushed.
         val copy = merged.problems.first { it.id != "a" }
-        assertEquals("local beta", copy.note)
+        assertEquals("local beta", copy.setter)
         assertTrue(copy.name.contains("conflict copy"))
         assertEquals(listOf(copy), plan.problemPushes.map { it.problem })
         assertTrue(plan.issues.any { it.contains("Tidepool") })
@@ -219,7 +218,7 @@ class SyncPlannerTest {
     @Test
     fun `pending remote writes are skipped entirely`() {
         val base = problem("a")
-        val local = snapshot(base.copy(note = "newer local"))
+        val local = snapshot(base.copy(setter = "newer local"))
         val remote = RemoteLibrary(
             board = remoteBoard(local),
             problems = mapOf("a" to remoteRecord(base, pending = true)),
@@ -234,7 +233,7 @@ class SyncPlannerTest {
 
     @Test
     fun `unreadable remote problems are never pushed over`() {
-        val local = snapshot(problem("a", note = "local content"))
+        val local = snapshot(problem("a", setter = "local content"))
         val remote = RemoteLibrary(
             board = remoteBoard(local),
             problems = emptyMap(),

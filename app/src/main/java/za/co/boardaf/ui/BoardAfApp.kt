@@ -83,8 +83,6 @@ data class BoardActions(
     val onDraftGradeChange: (BoulderGrade) -> Unit = {},
     val onDraftAngleChange: (Int) -> Unit = {},
     val onDraftAccentChange: (Accent) -> Unit = {},
-    val onDraftNoteChange: (String) -> Unit = {},
-    val onToggleDraftTag: (String) -> Unit = {},
     val onGuidedNext: () -> Unit = {},
     val onGuidedBack: () -> Unit = {},
     val onGoToGuidedStep: (GuidedStep) -> Unit = {},
@@ -92,7 +90,6 @@ data class BoardActions(
     val onArchiveProblem: (String) -> Unit = {},
     val onUnarchiveProblem: (String) -> Unit = {},
     val onDeleteProblem: (String) -> Unit = {},
-    val onToggleBenchmark: (String) -> Unit = {},
     val onPublishProblem: (String) -> Unit = {},
     val onSetKickboardEnabled: (Boolean) -> Unit = {},
     val onSetKickboardBoundary: (Float) -> Unit = {},
@@ -151,8 +148,6 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onDraftGradeChange = viewModel::setDraftGrade,
             onDraftAngleChange = viewModel::setDraftAngle,
             onDraftAccentChange = viewModel::setDraftAccent,
-            onDraftNoteChange = viewModel::setDraftNote,
-            onToggleDraftTag = viewModel::toggleDraftTag,
             onGuidedNext = viewModel::guidedNext,
             onGuidedBack = viewModel::guidedBack,
             onGoToGuidedStep = viewModel::goToGuidedStep,
@@ -160,7 +155,6 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onArchiveProblem = viewModel::archiveProblem,
             onUnarchiveProblem = viewModel::unarchiveProblem,
             onDeleteProblem = viewModel::deleteProblem,
-            onToggleBenchmark = viewModel::toggleBenchmark,
             onPublishProblem = viewModel::publishProblem,
             onSetKickboardEnabled = viewModel::setKickboardEnabled,
             onSetKickboardBoundary = viewModel::setKickboardBoundary,
@@ -274,6 +268,11 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                 )
                 val bottomInset = WindowInsets.navigationBars.asPaddingValues()
                     .calculateBottomPadding()
+                // "New" owns the highlight while a new problem is being set, so the
+                // bar reflects what you are doing, not just where you navigated.
+                val settingNewProblem = state.isSetting &&
+                    state.setter.isNewProblem &&
+                    currentDestination == Destination.BOARD
                 NavigationBar(
                     containerColor = BoardDark,
                     // 8dp shorter than the Material default (80dp), on top of the
@@ -282,7 +281,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                 ) {
                     Destination.entries.forEach { destination ->
                         NavigationBarItem(
-                            selected = currentDestination == destination,
+                            selected = currentDestination == destination && !settingNewProblem,
                             onClick = {
                                 // Keep the setter session alive across tabs so returning
                                 // to Board resumes where the user left off (draft is autosaved).
@@ -300,7 +299,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                         )
                         if (destination == Destination.PROBLEMS) {
                             NavigationBarItem(
-                                selected = false,
+                                selected = settingNewProblem,
                                 // Restarting a live session silently was the original
                                 // bug, so a live session asks first.
                                 onClick = {

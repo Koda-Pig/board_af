@@ -74,12 +74,10 @@ class VersionedBoardStoreTest {
                 grade = BoulderGrade.F6C_PLUS,
                 accent = Accent.CORAL,
                 setter = "Maya",
-                note = "note",
-                tags = listOf("Project", "Power"),
                 feetRule = FeetRule.OPEN_KICKBOARD,
                 startRule = StartRule.SPLIT_TWO,
                 finishRule = FinishRule.MATCH_ONE,
-                publicationState = PublicationState.BENCHMARK,
+                publicationState = PublicationState.PUBLISHED,
                 forerunConfirmedAt = 1721000000000L,
                 assignments = listOf(
                     ProblemAssignment("h33", ProblemHoldRole.START),

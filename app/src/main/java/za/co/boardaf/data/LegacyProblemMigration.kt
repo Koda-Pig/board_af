@@ -84,7 +84,6 @@ object LegacyProblemMigration {
             grade = grade,
             accent = accent,
             setter = json["setter"]?.jsonPrimitive?.content.orEmpty(),
-            note = json["note"]?.jsonPrimitive?.content.orEmpty(),
             feetRule = FeetRule.MARKED_ONLY,
             startRule = startRuleFor(assignments),
             finishRule = finishRuleFor(assignments),

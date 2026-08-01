@@ -18,7 +18,6 @@ class ProblemAngleCodecTest {
         grade = BoulderGrade.F6A,
         accent = Accent.SKY,
         setter = "You",
-        note = "",
         angleDegrees = angle,
     )
 

@@ -250,10 +250,6 @@ class ProblemValidatorTest {
             ProblemValidator.resolveState(PublicationState.PUBLISHED, errorIssues),
         )
         assertEquals(
-            PublicationState.NEEDS_REVIEW,
-            ProblemValidator.resolveState(PublicationState.BENCHMARK, errorIssues),
-        )
-        assertEquals(
             PublicationState.DRAFT,
             ProblemValidator.resolveState(PublicationState.DRAFT, errorIssues),
         )

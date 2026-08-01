@@ -88,7 +88,6 @@ object BoardDefaults {
                 grade = BoulderGrade.F6B,
                 accent = Accent.SKY,
                 setter = "You",
-                note = "Stay square through the middle, then commit to the blue finish.",
                 assignments = listOf(
                     assign("h35", ProblemHoldRole.START), assign("h34", ProblemHoldRole.FOOT_ONLY),
                     assign("h31", ProblemHoldRole.REGULAR), assign("h21", ProblemHoldRole.REGULAR),
@@ -101,7 +100,6 @@ object BoardDefaults {
                 grade = BoulderGrade.F5_PLUS,
                 accent = Accent.MOSS,
                 setter = "You",
-                note = "A relaxed green warm-up with a long final reach.",
                 assignments = listOf(
                     assign("h36", ProblemHoldRole.START), assign("h27", ProblemHoldRole.REGULAR),
                     assign("h20", ProblemHoldRole.FOOT_ONLY), assign("h16", ProblemHoldRole.REGULAR),
@@ -114,7 +112,6 @@ object BoardDefaults {
                 grade = BoulderGrade.F7A,
                 accent = Accent.CORAL,
                 setter = "Maya",
-                note = "Compression on the left panel. The h14 catch is the whole game.",
                 assignments = listOf(
                     assign("h32", ProblemHoldRole.START), assign("h29", ProblemHoldRole.REGULAR),
                     assign("h25", ProblemHoldRole.FOOT_ONLY), assign("h19", ProblemHoldRole.REGULAR),
@@ -128,7 +125,6 @@ object BoardDefaults {
                 grade = BoulderGrade.F6A,
                 accent = Accent.OCHRE,
                 setter = "Jono",
-                note = "Use the timber rail as a sidepull and keep your hips in.",
                 assignments = listOf(
                     assign("h34", ProblemHoldRole.START), assign("h35", ProblemHoldRole.FOOT_ONLY),
                     assign("h24", ProblemHoldRole.REGULAR), assign("h23", ProblemHoldRole.REGULAR),
@@ -147,7 +143,6 @@ object BoardDefaults {
         grade: BoulderGrade,
         accent: Accent,
         setter: String,
-        note: String,
         assignments: List<ProblemAssignment>,
     ) = Problem(
         id = id,
@@ -155,7 +150,6 @@ object BoardDefaults {
         grade = grade,
         accent = accent,
         setter = setter,
-        note = note,
         feetRule = FeetRule.MARKED_ONLY,
         startRule = startRuleFor(assignments),
         finishRule = finishRuleFor(assignments),

@@ -204,8 +204,6 @@ object SnapshotCodec {
         put("grade", problem.grade.name)
         put("accent", problem.accent.name)
         put("setter", problem.setter)
-        put("note", problem.note)
-        put("tags", JsonArray(problem.tags.map { JsonPrimitive(it) }))
         put("angle", problem.angleDegrees)
         put("feetRule", problem.feetRule.name)
         put("startRule", problem.startRule.name)
@@ -236,8 +234,6 @@ object SnapshotCodec {
             grade = grade,
             accent = parseEnum<Accent>(json.require("accent").jsonPrimitive.content),
             setter = json["setter"]?.jsonPrimitive?.content.orEmpty(),
-            note = json["note"]?.jsonPrimitive?.content.orEmpty(),
-            tags = (json["tags"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty(),
             // Additive since angle-per-problem landed; older records were set at the default incline.
             angleDegrees = json["angle"]?.jsonPrimitive?.longOrNull?.toInt()
                 ?.let { ProblemAngle.clamp(it) }
@@ -245,7 +241,7 @@ object SnapshotCodec {
             feetRule = parseEnum<FeetRule>(json.require("feetRule").jsonPrimitive.content),
             startRule = parseEnum<StartRule>(json.require("startRule").jsonPrimitive.content),
             finishRule = parseEnum<FinishRule>(json.require("finishRule").jsonPrimitive.content),
-            publicationState = parseEnum<PublicationState>(json.require("state").jsonPrimitive.content),
+            publicationState = decodeState(json.require("state").jsonPrimitive.content),
             forerunConfirmedAt = json["forerunConfirmedAt"]?.jsonPrimitive?.longOrNull,
             assignments = json.require("assignments").jsonArray.map { element ->
                 val assignment = element.jsonObject
@@ -256,6 +252,10 @@ object SnapshotCodec {
             },
         )
     }
+
+    /** "BENCHMARK" is a retired state; records written before it was dropped read back as published. */
+    private fun decodeState(value: String): PublicationState =
+        if (value == "BENCHMARK") PublicationState.PUBLISHED else parseEnum(value)
 
     private fun JsonObject.require(key: String): JsonElement =
         this[key]?.takeIf { it !is JsonNull } ?: error("Missing field: $key")

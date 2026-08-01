@@ -35,7 +35,6 @@ enum class PublicationState(val label: String) {
     DRAFT("Draft"),
     NEEDS_REVIEW("Needs review"),
     PUBLISHED("Published"),
-    BENCHMARK("Benchmark"),
     ARCHIVED("Archived"),
 }
 
@@ -80,8 +79,6 @@ data class Problem(
     val grade: BoulderGrade,
     val accent: Accent,
     val setter: String,
-    val note: String,
-    val tags: List<String> = emptyList(),
     /** Wall incline this problem was set (and forerun) at. */
     val angleDegrees: Int = ProblemAngle.DEFAULT_DEGREES,
     val feetRule: FeetRule = FeetRule.MARKED_ONLY,
@@ -99,8 +96,6 @@ data class DraftProblem(
     val name: String = "",
     val grade: BoulderGrade = BoulderGrade.F6A,
     val accent: Accent = Accent.SKY,
-    val note: String = "",
-    val tags: List<String> = emptyList(),
     val angleDegrees: Int = ProblemAngle.DEFAULT_DEGREES,
     val feetRule: FeetRule = FeetRule.MARKED_ONLY,
     val assignments: List<ProblemAssignment> = emptyList(),
@@ -118,10 +113,7 @@ data class DraftProblem(
      * untitled drafts render as "Untitled draft" and can be deleted.
      */
     val hasContent: Boolean
-        get() = name.isNotBlank() ||
-            note.isNotBlank() ||
-            tags.isNotEmpty() ||
-            assignments.isNotEmpty()
+        get() = name.isNotBlank() || assignments.isNotEmpty()
 
     fun countFor(role: ProblemHoldRole): Int = assignments.count { it.role == role }
 
@@ -133,8 +125,6 @@ data class DraftProblem(
         grade = grade,
         accent = accent,
         setter = setter,
-        note = note.trim(),
-        tags = tags,
         angleDegrees = angleDegrees,
         feetRule = feetRule,
         startRule = startRule,
@@ -150,8 +140,6 @@ data class DraftProblem(
             name = problem.name,
             grade = problem.grade,
             accent = problem.accent,
-            note = problem.note,
-            tags = problem.tags,
             angleDegrees = problem.angleDegrees,
             feetRule = problem.feetRule,
             assignments = problem.assignments,
@@ -167,8 +155,4 @@ data class DraftProblem(
             forerunConfirmedAt = null,
         )
     }
-}
-
-object ProblemTags {
-    val suggestions = listOf("Project", "Warm-up", "Technical", "Power")
 }

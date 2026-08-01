@@ -194,7 +194,7 @@ object ProblemValidator {
     /** Lifecycle for problems that already exist (migration, board reconfiguration, edits). */
     fun resolveState(current: PublicationState, issues: List<ProblemIssue>): PublicationState = when {
         !hasErrors(issues) -> current
-        current == PublicationState.PUBLISHED || current == PublicationState.BENCHMARK -> PublicationState.NEEDS_REVIEW
+        current == PublicationState.PUBLISHED -> PublicationState.NEEDS_REVIEW
         current == PublicationState.ARCHIVED -> PublicationState.ARCHIVED
         current == PublicationState.DRAFT -> PublicationState.DRAFT
         else -> PublicationState.NEEDS_REVIEW

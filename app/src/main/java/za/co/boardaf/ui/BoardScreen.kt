@@ -74,7 +74,6 @@ import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
-import za.co.boardaf.ui.theme.Gold
 import kotlinx.coroutines.launch
 import za.co.boardaf.ui.theme.Moss
 
@@ -420,8 +419,6 @@ fun StatusChip(state: PublicationState, modifier: Modifier = Modifier) {
             Coral.copy(alpha = 0.22f) to MaterialTheme.colorScheme.onSurface
         PublicationState.PUBLISHED ->
             Moss.copy(alpha = 0.30f) to MaterialTheme.colorScheme.onSurface
-        PublicationState.BENCHMARK ->
-            Gold.copy(alpha = 0.35f) to MaterialTheme.colorScheme.onSurface
         PublicationState.ARCHIVED ->
             MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -509,17 +506,6 @@ private fun ProblemDetails(
                 }
             }
 
-            if (problem.note.isNotBlank()) {
-                Text(problem.note, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            }
-            if (problem.tags.isNotEmpty()) {
-                Text(
-                    text = problem.tags.joinToString("  ·  "),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             MarkerLegend()
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -569,15 +555,12 @@ private fun ProblemDetails(
                         }
                         PublicationState.PUBLISHED -> {
                             OutlinedButton(
-                                onClick = { actions.onToggleBenchmark(problem.id) },
+                                onClick = { confirmDelete = true },
                                 modifier = Modifier.weight(1f),
-                            ) { Text("Mark benchmark") }
-                        }
-                        PublicationState.BENCHMARK -> {
-                            OutlinedButton(
-                                onClick = { actions.onToggleBenchmark(problem.id) },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Unmark benchmark") }
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) { Text("Delete") }
                         }
                         PublicationState.ARCHIVED -> {
                             OutlinedButton(
@@ -596,10 +579,13 @@ private fun ProblemDetails(
                 }
             }
 
-            TextButton(
-                onClick = { confirmDelete = true },
-                modifier = Modifier.align(Alignment.End),
-            ) { Text("Delete") }
+            // Published problems already carry Delete in the action row above.
+            if (needsRepair || problem.publicationState != PublicationState.PUBLISHED) {
+                TextButton(
+                    onClick = { confirmDelete = true },
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text("Delete") }
+            }
         }
     }
 

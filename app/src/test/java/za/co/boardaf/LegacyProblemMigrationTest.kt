@@ -56,7 +56,6 @@ class LegacyProblemMigrationTest {
 
         val tidepool = result.problems.first { it.id == "tidepool" }
         assertEquals("You", tidepool.setter)
-        assertEquals("Stay square through the middle, then commit to the blue finish.", tidepool.note)
     }
 
     @Test

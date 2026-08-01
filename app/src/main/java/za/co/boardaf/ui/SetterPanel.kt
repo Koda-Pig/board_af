@@ -62,7 +62,6 @@ import za.co.boardaf.model.IssueSeverity
 import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.ProblemIssue
-import za.co.boardaf.model.ProblemTags
 import za.co.boardaf.model.ProblemValidator
 import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.GuidedStep
@@ -486,7 +485,7 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
     }
 }
 
-/** Name, grade, angle, accent, tags, notes, validation and save/publish — shared by wizard review and quick set. */
+/** Name, grade, angle, accent, validation and save/publish — shared by wizard review and quick set. */
 @Composable
 private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
@@ -530,25 +529,6 @@ private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
                 )
             }
         }
-        Text("Tags", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(ProblemTags.suggestions) { tag ->
-                FilterChip(
-                    selected = tag in draft.tags,
-                    onClick = { actions.onToggleDraftTag(tag) },
-                    label = { Text(tag) },
-                )
-            }
-        }
-        OutlinedTextField(
-            value = draft.note,
-            onValueChange = actions.onDraftNoteChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Setter notes") },
-            minLines = 2,
-            maxLines = 4,
-        )
-
         if (errors.isEmpty()) {
             Surface(color = Sage.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
                 Text(
@@ -570,7 +550,7 @@ private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
                 enabled = draft.hasContent,
                 modifier = Modifier.weight(1f),
             ) {
-                Text(if (draft.baseState == PublicationState.PUBLISHED || draft.baseState == PublicationState.BENCHMARK) "Save" else "Save draft")
+                Text(if (draft.baseState == PublicationState.PUBLISHED) "Save" else "Save draft")
             }
             Button(
                 onClick = { confirmForerun = true },
