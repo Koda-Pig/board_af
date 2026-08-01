@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -38,9 +36,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.data.sync.CloudSyncAvailability
 import za.co.boardaf.data.sync.CloudSyncState
-import za.co.boardaf.ui.theme.BoardDark
-import za.co.boardaf.ui.theme.BoardLine
-import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import java.text.DateFormat
@@ -55,7 +50,7 @@ fun CloudSyncCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, BoardLine, RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp),
@@ -69,7 +64,7 @@ fun CloudSyncCard(
                     "This build has no Firebase configuration, so problems stay on this device. " +
                         "See docs/firebase-setup.md to enable sync.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -95,7 +90,7 @@ private fun SignInForm(cloud: CloudSyncState, actions: BoardActions) {
     Text(
         "Sign in to back up problems and keep every device on this board in sync.",
         style = MaterialTheme.typography.bodySmall,
-        color = BoardMuted,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     OutlinedTextField(
         value = email,
@@ -143,7 +138,6 @@ private fun SignInForm(cloud: CloudSyncState, actions: BoardActions) {
         Button(
             onClick = { actions.onCloudSignIn(email, password) },
             enabled = canSubmit,
-            colors = ButtonDefaults.buttonColors(containerColor = BoardDark, contentColor = Color.White),
         ) {
             Text("Sign in")
         }
@@ -173,13 +167,12 @@ private fun SignedInStatus(cloud: CloudSyncState, actions: BoardActions) {
             else -> "Waiting for the first sync."
         },
         style = MaterialTheme.typography.bodySmall,
-        color = BoardMuted,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = actions.onCloudSyncNow,
             enabled = !cloud.isSyncing,
-            colors = ButtonDefaults.buttonColors(containerColor = BoardDark, contentColor = Color.White),
         ) {
             Text("Sync now")
         }

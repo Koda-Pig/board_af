@@ -16,32 +16,35 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Clear
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,14 +62,11 @@ import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.PublicationState
-import za.co.boardaf.ui.theme.BoardDark
-import za.co.boardaf.ui.theme.BoardMuted
-import za.co.boardaf.ui.theme.BoardPaper
 
 private const val ACTIVE = "Active"
 private const val ALL = "All"
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ProblemsScreen(
     state: BoardUiState,
@@ -76,9 +76,10 @@ fun ProblemsScreen(
     onEditProblem: (String) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    var filtersExpanded by rememberSaveable { mutableStateOf(false) }
+    var filtersOpen by rememberSaveable { mutableStateOf(false) }
     var statusFilter by rememberSaveable { mutableStateOf(ACTIVE) }
     var gradeFilter by rememberSaveable(state.gradeSystem) { mutableStateOf(ALL) }
+    var angleFilter by rememberSaveable { mutableStateOf(ALL) }
     var feetFilter by rememberSaveable { mutableStateOf(ALL) }
     var setterFilter by rememberSaveable { mutableStateOf(ALL) }
     var tagFilter by rememberSaveable { mutableStateOf(ALL) }
@@ -86,6 +87,8 @@ fun ProblemsScreen(
 
     val setters = state.problems.map { it.setter }.filter { it.isNotBlank() }.distinct().sorted()
     val tags = state.problems.flatMap { it.tags }.distinct().sorted()
+    // The angle filter only earns its row once the library actually spans inclines.
+    val angles = state.problems.map { it.angleDegrees }.distinct().sorted()
 
     val statusOptions = listOf(ACTIVE, ALL) + PublicationState.entries.map { it.label }
 
@@ -97,6 +100,7 @@ fun ProblemsScreen(
         }
         statusOk &&
             (gradeFilter == ALL || problem.grade.label(state.gradeSystem) == gradeFilter) &&
+            (angleFilter == ALL || "${problem.angleDegrees}°" == angleFilter) &&
             (feetFilter == ALL || problem.feetRule.label == feetFilter) &&
             (setterFilter == ALL || problem.setter == setterFilter) &&
             (tagFilter == ALL || tagFilter in problem.tags) &&
@@ -105,6 +109,7 @@ fun ProblemsScreen(
 
     val filtering = statusFilter != ACTIVE ||
         gradeFilter != ALL ||
+        angleFilter != ALL ||
         feetFilter != ALL ||
         setterFilter != ALL ||
         tagFilter != ALL ||
@@ -113,6 +118,7 @@ fun ProblemsScreen(
     val activeFilterChips = buildList {
         if (statusFilter != ACTIVE) add("Status: $statusFilter" to { statusFilter = ACTIVE })
         if (gradeFilter != ALL) add("Grade: $gradeFilter" to { gradeFilter = ALL })
+        if (angleFilter != ALL) add("Angle: $angleFilter" to { angleFilter = ALL })
         if (feetFilter != ALL) add("Feet: $feetFilter" to { feetFilter = ALL })
         if (setterFilter != ALL) add("Setter: $setterFilter" to { setterFilter = ALL })
         if (tagFilter != ALL) add("Tag: $tagFilter" to { tagFilter = ALL })
@@ -126,7 +132,7 @@ fun ProblemsScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("PROBLEM LIBRARY", style = MaterialTheme.typography.labelSmall, color = BoardMuted, fontWeight = FontWeight.Bold)
+            Text("PROBLEM LIBRARY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             Text(
                 text = if (filtering) {
                     "${visibleProblems.size} of ${state.problems.size} problems"
@@ -139,7 +145,7 @@ fun ProblemsScreen(
             Text(
                 "Grades are setter estimates.",
                 style = MaterialTheme.typography.bodySmall,
-                color = BoardMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
@@ -161,17 +167,13 @@ fun ProblemsScreen(
             )
         }
         item {
-            TextButton(onClick = { filtersExpanded = !filtersExpanded }) {
+            TextButton(onClick = { filtersOpen = true }) {
                 Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (filtersExpanded) "Hide filters" else "Filters")
-                Icon(
-                    if (filtersExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                    contentDescription = null,
-                )
+                Text("Filters")
             }
         }
-        if (activeFilterChips.isNotEmpty() && !filtersExpanded) {
+        if (activeFilterChips.isNotEmpty()) {
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     activeFilterChips.forEach { (label, clear) ->
@@ -181,52 +183,6 @@ fun ProblemsScreen(
                             label = { Text(label) },
                         )
                     }
-                }
-            }
-        }
-        if (filtersExpanded) {
-            item {
-                FilterRow(
-                    title = "Status",
-                    options = statusOptions,
-                    selected = statusFilter,
-                    onSelect = { statusFilter = it },
-                )
-            }
-            item {
-                FilterRow(
-                    title = "Grade",
-                    options = listOf(ALL) + BoulderGrade.options(state.gradeSystem).map { it.label(state.gradeSystem) },
-                    selected = gradeFilter,
-                    onSelect = { gradeFilter = it },
-                )
-            }
-            item {
-                FilterRow(
-                    title = "Feet rule",
-                    options = listOf(ALL) + FeetRule.entries.map { it.label },
-                    selected = feetFilter,
-                    onSelect = { feetFilter = it },
-                )
-            }
-            if (setters.size > 1) {
-                item {
-                    FilterRow(
-                        title = "Setter",
-                        options = listOf(ALL) + setters,
-                        selected = setterFilter,
-                        onSelect = { setterFilter = it },
-                    )
-                }
-            }
-            if (tags.isNotEmpty()) {
-                item {
-                    FilterRow(
-                        title = "Tag",
-                        options = listOf(ALL) + tags,
-                        selected = tagFilter,
-                        onSelect = { tagFilter = it },
-                    )
                 }
             }
         }
@@ -246,25 +202,113 @@ fun ProblemsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(30.dp),
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
     }
+
+    // Filters live on a bottom sheet: chips wrap instead of clipping in nested
+    // LazyRows, and dismissing lands straight back on the filtered results.
+    if (filtersOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { filtersOpen = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(
+                    "Filter problems",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                FilterSection(
+                    title = "Status",
+                    options = statusOptions,
+                    selected = statusFilter,
+                    onSelect = { statusFilter = it },
+                )
+                FilterSection(
+                    title = "Grade",
+                    options = listOf(ALL) + BoulderGrade.options(state.gradeSystem).map { it.label(state.gradeSystem) },
+                    selected = gradeFilter,
+                    onSelect = { gradeFilter = it },
+                )
+                if (angles.size > 1) {
+                    FilterSection(
+                        title = "Angle",
+                        options = listOf(ALL) + angles.map { "$it°" },
+                        selected = angleFilter,
+                        onSelect = { angleFilter = it },
+                    )
+                }
+                FilterSection(
+                    title = "Feet rule",
+                    options = listOf(ALL) + FeetRule.entries.map { it.label },
+                    selected = feetFilter,
+                    onSelect = { feetFilter = it },
+                )
+                if (setters.size > 1) {
+                    FilterSection(
+                        title = "Setter",
+                        options = listOf(ALL) + setters,
+                        selected = setterFilter,
+                        onSelect = { setterFilter = it },
+                    )
+                }
+                if (tags.isNotEmpty()) {
+                    FilterSection(
+                        title = "Tag",
+                        options = listOf(ALL) + tags,
+                        selected = tagFilter,
+                        onSelect = { tagFilter = it },
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = {
+                            statusFilter = ACTIVE
+                            gradeFilter = ALL
+                            angleFilter = ALL
+                            feetFilter = ALL
+                            setterFilter = ALL
+                            tagFilter = ALL
+                        },
+                        enabled = activeFilterChips.isNotEmpty(),
+                    ) { Text("Clear all") }
+                    Spacer(Modifier.weight(1f))
+                    Button(onClick = { filtersOpen = false }) {
+                        Text(
+                            if (visibleProblems.size == 1) "Show 1 problem" else "Show ${visibleProblems.size} problems",
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterRow(
+private fun FilterSection(
     title: String,
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
 ) {
     Column {
-        Text(title, style = MaterialTheme.typography.labelSmall, color = BoardMuted)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(options) { option ->
+        Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            options.forEach { option ->
                 FilterChip(
                     selected = selected == option,
                     onClick = { onSelect(option) },
@@ -316,16 +360,16 @@ private fun ProblemCard(
                 Text(
                     "${problem.setter} · ${holdCountLabel(problem.assignments.size)} · ${problem.feetRule.label}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Surface(color = BoardDark, shape = RoundedCornerShape(7.dp)) {
+            Surface(color = MaterialTheme.colorScheme.inverseSurface, shape = RoundedCornerShape(7.dp)) {
                 Text(
-                    "est. ${problem.grade.label(state.gradeSystem)}",
+                    "est. ${problem.grade.label(state.gradeSystem)} · ${problem.angleDegrees}°",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    color = BoardPaper,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                 )

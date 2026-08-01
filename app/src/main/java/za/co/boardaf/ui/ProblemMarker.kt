@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.ui.theme.BoardDark
-import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Gold
 import za.co.boardaf.ui.theme.Moss
@@ -162,7 +161,7 @@ fun MarkerLegend(modifier: Modifier = Modifier) {
                 Text(
                     text = role.label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

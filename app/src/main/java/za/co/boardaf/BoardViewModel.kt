@@ -28,6 +28,7 @@ import za.co.boardaf.model.DraftProblem
 import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.Problem
+import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.ProblemIssue
 import za.co.boardaf.model.ProblemValidator
@@ -281,7 +282,7 @@ class BoardViewModel @JvmOverloads constructor(
         val current = mutableState.value
         mutableState.value = current.copy(
             isSetting = true,
-            setter = SetterReducer.start(DraftProblem(setter = currentSetterName())),
+            setter = SetterReducer.start(DraftProblem(setter = currentSetterName()), current.setterMode),
         )
     }
 
@@ -291,18 +292,31 @@ class BoardViewModel @JvmOverloads constructor(
         mutableState.value = current.copy(
             isSetting = true,
             selectedProblemId = problemId,
-            setter = SetterReducer.start(DraftProblem.fromProblem(problem)),
+            setter = SetterReducer.start(DraftProblem.fromProblem(problem), current.setterMode),
         )
     }
 
     fun duplicateProblem(problemId: String) {
         val current = mutableState.value
         val problem = current.problems.firstOrNull { it.id == problemId } ?: return
+        // The copy is this setter's, not the original author's (F27).
+        val draft = DraftProblem.duplicateOf(problem).copy(setter = currentSetterName())
         mutableState.value = current.copy(
             isSetting = true,
-            setter = SetterReducer.start(DraftProblem.duplicateOf(problem)),
+            setter = SetterReducer.start(draft, current.setterMode),
         )
         autosaveDraft()
+    }
+
+    /** Switch quick/guided entry for this session and remember it as the preference. */
+    fun setSetterMode(mode: SetterMode) {
+        val current = mutableState.value
+        if (current.setterMode == mode && (!current.isSetting || current.setter.mode == mode)) return
+        mutableState.value = current.copy(
+            setterMode = mode,
+            setter = if (current.isSetting) SetterReducer.setMode(current.setter, mode) else current.setter,
+        )
+        persist()
     }
 
     fun cancelSetting() {
@@ -319,7 +333,11 @@ class BoardViewModel @JvmOverloads constructor(
     fun tapHold(holdId: String) {
         val current = mutableState.value
         if (!current.isSetting) return
-        val result = SetterReducer.tapHold(current.setter, holdId, current.board)
+        val result = if (current.setter.mode == SetterMode.QUICK) {
+            SetterReducer.quickTapHold(current.setter, holdId, current.board)
+        } else {
+            SetterReducer.tapHold(current.setter, holdId, current.board)
+        }
         mutableState.value = current.copy(setter = result.state)
         result.rejection?.let { emit(BoardEvent.TapRejected(it)) }
         result.notice?.let { emit(BoardEvent.Message(it)) }
@@ -365,6 +383,11 @@ class BoardViewModel @JvmOverloads constructor(
 
     fun setDraftGrade(grade: BoulderGrade) {
         updateDraft { it.copy(grade = grade) }
+        autosaveDraft()
+    }
+
+    fun setDraftAngle(angleDegrees: Int) {
+        updateDraft { it.copy(angleDegrees = ProblemAngle.clamp(angleDegrees)) }
         autosaveDraft()
     }
 

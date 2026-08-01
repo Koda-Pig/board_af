@@ -104,7 +104,6 @@ data class ConfiguredHold(
 /** Board geometry combined with stored classifications; what validation and UI consume. */
 data class ConfiguredBoard(
     val name: String,
-    val angleDegrees: Int,
     val heightMeters: Float,
     val kickboardEnabled: Boolean,
     val kickboardTopY: Float,
@@ -122,7 +121,6 @@ data class ConfiguredBoard(
             holds: List<HoldDefinition> = BoardDefaults.holds,
         ): ConfiguredBoard = ConfiguredBoard(
             name = BoardDefaults.BOARD_NAME,
-            angleDegrees = BoardDefaults.BOARD_ANGLE_DEGREES,
             heightMeters = BoardDefaults.BOARD_HEIGHT_METERS,
             kickboardEnabled = setup.kickboardEnabled,
             kickboardTopY = setup.kickboardTopY,

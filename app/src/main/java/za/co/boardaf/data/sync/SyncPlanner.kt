@@ -22,6 +22,13 @@ import za.co.boardaf.model.Problem
  */
 object SyncPlanner {
 
+    /**
+     * How long a remote `deleted: true` document must have existed before the
+     * local tombstone is dropped. The remote document itself is kept forever, so
+     * retirement never loses the ability to propagate or recover the delete.
+     */
+    const val TOMBSTONE_RETENTION_MS: Long = 30L * 24 * 60 * 60 * 1000
+
     fun plan(
         local: LibrarySnapshot,
         remote: RemoteLibrary,
@@ -67,7 +74,15 @@ object SyncPlanner {
             // before the merge rules so a delete is never mistaken for an edit
             // conflict, and a surviving copy never resurrects the record.
             if (record?.deleted == true) {
-                if (id !in tombstones) {
+                // Once the server has carried the tombstone long enough, the local
+                // one has done its propagation job and can retire. It must also stop
+                // being re-adopted here, or retirement would undo itself next plan.
+                val retired = !record.pendingWrite &&
+                    record.deletedAt != null &&
+                    now - record.deletedAt >= TOMBSTONE_RETENTION_MS
+                if (retired) {
+                    tombstones -= id
+                } else if (id !in tombstones) {
                     tombstones += id
                     if (localProblem != null) {
                         issues += "\"${localProblem.name}\" was deleted on another device."

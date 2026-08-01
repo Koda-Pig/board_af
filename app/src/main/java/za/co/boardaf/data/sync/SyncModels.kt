@@ -23,6 +23,12 @@ data class RemoteProblemRecord(
      * vanishing — which the planner treats as server-side data loss.
      */
     val deleted: Boolean = false,
+    /**
+     * Server time the tombstone was written; null on live records and on
+     * tombstones from before this field existed (those are retained forever,
+     * the safe default).
+     */
+    val deletedAt: Long? = null,
 )
 
 /** The board setup + settings document as last seen remotely. */

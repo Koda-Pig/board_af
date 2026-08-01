@@ -183,8 +183,10 @@ class VersionedBoardStoreTest {
         val result = VersionedBoardStore(io).load()
 
         assertEquals(4, result.snapshot.problems.size)
+        // All four seeds are valid against the default board, so a first run opens
+        // on a clean library rather than one full of Needs review cards.
         assertEquals(
-            setOf(PublicationState.NEEDS_REVIEW, PublicationState.PUBLISHED),
+            setOf(PublicationState.PUBLISHED),
             result.snapshot.problems.map { it.publicationState }.toSet(),
         )
     }

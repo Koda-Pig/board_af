@@ -44,6 +44,21 @@ data class ProblemAssignment(
     val role: ProblemHoldRole,
 )
 
+/**
+ * The wall is adjustable from 0° to 90°, so the incline is a property of each
+ * problem (the angle it was set and forerun at), never of the board. Grades only
+ * mean something relative to this.
+ */
+object ProblemAngle {
+    const val MIN_DEGREES = 0
+    const val MAX_DEGREES = 90
+    const val DEFAULT_DEGREES = 20
+    /** Physical adjustment detents; also keeps the UI slider from implying 1° precision. */
+    const val STEP_DEGREES = 5
+
+    fun clamp(degrees: Int): Int = degrees.coerceIn(MIN_DEGREES, MAX_DEGREES)
+}
+
 fun startRuleFor(assignments: List<ProblemAssignment>): StartRule =
     if (assignments.count { it.role == ProblemHoldRole.START } >= 2) StartRule.SPLIT_TWO else StartRule.MATCH_ONE
 
@@ -67,6 +82,8 @@ data class Problem(
     val setter: String,
     val note: String,
     val tags: List<String> = emptyList(),
+    /** Wall incline this problem was set (and forerun) at. */
+    val angleDegrees: Int = ProblemAngle.DEFAULT_DEGREES,
     val feetRule: FeetRule = FeetRule.MARKED_ONLY,
     val startRule: StartRule = StartRule.MATCH_ONE,
     val finishRule: FinishRule = FinishRule.MATCH_ONE,
@@ -84,6 +101,7 @@ data class DraftProblem(
     val accent: Accent = Accent.SKY,
     val note: String = "",
     val tags: List<String> = emptyList(),
+    val angleDegrees: Int = ProblemAngle.DEFAULT_DEGREES,
     val feetRule: FeetRule = FeetRule.MARKED_ONLY,
     val assignments: List<ProblemAssignment> = emptyList(),
     val baseState: PublicationState? = null,
@@ -117,6 +135,7 @@ data class DraftProblem(
         setter = setter,
         note = note.trim(),
         tags = tags,
+        angleDegrees = angleDegrees,
         feetRule = feetRule,
         startRule = startRule,
         finishRule = finishRule,
@@ -133,6 +152,7 @@ data class DraftProblem(
             accent = problem.accent,
             note = problem.note,
             tags = problem.tags,
+            angleDegrees = problem.angleDegrees,
             feetRule = problem.feetRule,
             assignments = problem.assignments,
             baseState = problem.publicationState,

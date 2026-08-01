@@ -35,14 +35,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,20 +53,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import za.co.boardaf.BoardUiState
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.IssueSeverity
+import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.ProblemIssue
 import za.co.boardaf.model.ProblemTags
 import za.co.boardaf.model.ProblemValidator
 import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.GuidedStep
+import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.setter.SetterReducer
-import za.co.boardaf.ui.theme.BoardLine
-import za.co.boardaf.ui.theme.BoardMuted
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import za.co.boardaf.ui.theme.Sage
@@ -102,7 +106,7 @@ fun SetterPanel(
                     Text(
                         text = if (draft.editingProblemId == null) "NEW PROBLEM" else "EDITING DRAFT",
                         style = MaterialTheme.typography.labelSmall,
-                        color = BoardMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
@@ -116,38 +120,48 @@ fun SetterPanel(
                 }
             }
 
-            WizardStepper(
-                state = state,
-                actions = actions,
-                hasAttemptedNext = attemptedNextMask and (1 shl step.ordinal) != 0,
-            )
+            SetterModeToggle(mode = setter.mode, onSelect = actions.onSetSetterMode)
 
-            if (step != GuidedStep.FEET_RULE) {
-                FeetRuleBanner(
-                    feetRule = draft.feetRule,
-                    footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
-                )
-            }
-
-            when (step) {
-                GuidedStep.FEET_RULE -> FeetRuleStep(state = state, actions = actions)
-                GuidedStep.START, GuidedStep.OTHER, GuidedStep.FINISH -> HoldStep(
+            if (setter.mode == SetterMode.QUICK) {
+                QuickSetContent(
                     state = state,
                     actions = actions,
                     onClearRequested = { confirmClear = true },
                 )
-                GuidedStep.DETAILS -> DetailsStep(state = state, actions = actions)
+            } else {
+                WizardStepper(
+                    state = state,
+                    actions = actions,
+                    hasAttemptedNext = attemptedNextMask and (1 shl step.ordinal) != 0,
+                )
+
+                if (step != GuidedStep.FEET_RULE) {
+                    FeetRuleBanner(
+                        feetRule = draft.feetRule,
+                        footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
+                    )
+                }
+
+                when (step) {
+                    GuidedStep.FEET_RULE -> FeetRuleStep(state = state, actions = actions)
+                    GuidedStep.START, GuidedStep.OTHER, GuidedStep.FINISH -> HoldStep(
+                        state = state,
+                        actions = actions,
+                        onClearRequested = { confirmClear = true },
+                    )
+                    GuidedStep.DETAILS -> DetailsStep(state = state, actions = actions)
+                }
+
+                MarkerLegend()
+
+                WizardNavRow(
+                    state = state,
+                    actions = actions,
+                    onAttemptNext = {
+                        attemptedNextMask = attemptedNextMask or (1 shl step.ordinal)
+                    },
+                )
             }
-
-            MarkerLegend()
-
-            WizardNavRow(
-                state = state,
-                actions = actions,
-                onAttemptNext = {
-                    attemptedNextMask = attemptedNextMask or (1 shl step.ordinal)
-                },
-            )
         }
     }
 
@@ -168,6 +182,79 @@ fun SetterPanel(
                 TextButton(onClick = { confirmClear = false }) { Text("Keep") }
             },
         )
+    }
+}
+
+@Composable
+private fun SetterModeToggle(mode: SetterMode, onSelect: (SetterMode) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        FilterChip(
+            selected = mode == SetterMode.GUIDED,
+            onClick = { onSelect(SetterMode.GUIDED) },
+            label = { Text("Guided steps") },
+        )
+        FilterChip(
+            selected = mode == SetterMode.QUICK,
+            onClick = { onSelect(SetterMode.QUICK) },
+            label = { Text("Quick set") },
+        )
+    }
+}
+
+/**
+ * The single-canvas fast path: taps toggle membership, roles are inferred
+ * (lowest row starts, topmost finishes, kickboard is feet), and the details
+ * form sits right below — no steps, no gating. Publishing still runs the same
+ * validation and forerun confirmation as the wizard.
+ */
+@Composable
+private fun QuickSetContent(
+    state: BoardUiState,
+    actions: BoardActions,
+    onClearRequested: () -> Unit,
+) {
+    val setter = state.setter
+    val draft = setter.draft
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "Tap the holds you want. The lowest row becomes the start, the topmost " +
+                "row the finish, kickboard holds become feet. Switch to Guided steps to " +
+                "fine-tune individual roles.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Text("Feet rule", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FeetRuleSelector(state = state, actions = actions)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
+                Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
+            }
+            IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
+                Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
+            }
+            IconButton(
+                onClick = onClearRequested,
+                enabled = draft.assignments.isNotEmpty(),
+            ) {
+                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear all holds")
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = holdCountLabel(draft.assignments.size),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        MarkerLegend()
+        StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
+        DraftDetailsForm(state = state, actions = actions)
     }
 }
 
@@ -193,7 +280,7 @@ private fun WizardStepper(
         Text(
             text = "Step ${current.ordinal + 1} of ${GuidedStep.entries.size}",
             style = MaterialTheme.typography.labelMedium,
-            color = BoardMuted,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
         )
         LazyRow(
@@ -244,7 +331,7 @@ private fun WizardStepper(
             Text(
                 text = current.hint,
                 style = MaterialTheme.typography.bodySmall,
-                color = BoardMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -286,9 +373,8 @@ private fun WizardNavRow(
 }
 
 @Composable
-private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
+private fun FeetRuleSelector(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
-    val setter = state.setter
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(availableFeetRules(state)) { rule ->
@@ -302,8 +388,16 @@ private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
         Text(
             text = draft.feetRule.description,
             style = MaterialTheme.typography.bodySmall,
-            color = BoardMuted,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
+    val setter = state.setter
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FeetRuleSelector(state = state, actions = actions)
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
                 Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
@@ -335,7 +429,7 @@ private fun HoldStep(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (paletteRoles.size > 1) {
-            Text("Tap role, then tap holds", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+            Text("Tap role, then tap holds", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(paletteRoles) { role ->
@@ -364,7 +458,7 @@ private fun HoldStep(
             Text(
                 text = holdCountLabel(draft.assignments.size),
                 style = MaterialTheme.typography.labelMedium,
-                color = BoardMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -373,10 +467,6 @@ private fun HoldStep(
 @Composable
 private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
-    val issues = state.draftIssues
-    val errors = issues.filter { it.severity == IssueSeverity.ERROR }
-    val warnings = issues.filter { it.severity == IssueSeverity.WARNING }
-    var confirmForerun by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
@@ -387,11 +477,25 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
             text = "Holds are locked while you review. " +
                 "Go back to a hold step to add or change them.",
             style = MaterialTheme.typography.bodySmall,
-            color = BoardMuted,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        HorizontalDivider(color = BoardLine)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
+        DraftDetailsForm(state = state, actions = actions)
+    }
+}
+
+/** Name, grade, angle, accent, tags, notes, validation and save/publish — shared by wizard review and quick set. */
+@Composable
+private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
+    val draft = state.setter.draft
+    val issues = state.draftIssues
+    val errors = issues.filter { it.severity == IssueSeverity.ERROR }
+    val warnings = issues.filter { it.severity == IssueSeverity.WARNING }
+    var confirmForerun by rememberSaveable { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(
             value = draft.name,
             onValueChange = actions.onDraftNameChange,
@@ -399,7 +503,7 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
             label = { Text("Problem name") },
             singleLine = true,
         )
-        Text("Grade · setter estimate", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        Text("Grade · setter estimate", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(BoulderGrade.options(state.gradeSystem)) { grade ->
                 FilterChip(
@@ -409,7 +513,11 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
                 )
             }
         }
-        Text("Accent color", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        AngleField(
+            angleDegrees = draft.angleDegrees,
+            onAngleChange = actions.onDraftAngleChange,
+        )
+        Text("Accent color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(Accent.entries) { accent ->
                 FilterChip(
@@ -422,7 +530,7 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
                 )
             }
         }
-        Text("Tags", style = MaterialTheme.typography.labelMedium, color = BoardMuted)
+        Text("Tags", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             items(ProblemTags.suggestions) { tag ->
                 FilterChip(
@@ -453,7 +561,7 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
             IssueGroup(title = "Fix before publishing", issues = errors, tint = Coral)
         }
         if (warnings.isNotEmpty()) {
-            IssueGroup(title = "Worth a look", issues = warnings, tint = BoardMuted)
+            IssueGroup(title = "Worth a look", issues = warnings, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -503,6 +611,36 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
     }
 }
 
+/**
+ * The wall adjusts 0–90°; the angle belongs to the problem, not the board.
+ * Commits on release like the kickboard slider so autosave isn't spammed per frame.
+ */
+@Composable
+private fun AngleField(angleDegrees: Int, onAngleChange: (Int) -> Unit) {
+    var angleDraft by remember(angleDegrees) { mutableFloatStateOf(angleDegrees.toFloat()) }
+    Column {
+        Text(
+            text = "Wall angle · ${angleDraft.roundToInt()}°",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = angleDraft,
+            onValueChange = {
+                angleDraft = (it / ProblemAngle.STEP_DEGREES).roundToInt() *
+                    ProblemAngle.STEP_DEGREES.toFloat()
+            },
+            onValueChangeFinished = { onAngleChange(angleDraft.roundToInt()) },
+            valueRange = ProblemAngle.MIN_DEGREES.toFloat()..ProblemAngle.MAX_DEGREES.toFloat(),
+        )
+        Text(
+            text = "The incline this problem is set and forerun at. Grades only mean something at this angle.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun IssueGroup(title: String, issues: List<ProblemIssue>, tint: androidx.compose.ui.graphics.Color) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -517,7 +655,7 @@ private fun IssueGroup(title: String, issues: List<ProblemIssue>, tint: androidx
                 Text(
                     text = "• ${issue.message}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

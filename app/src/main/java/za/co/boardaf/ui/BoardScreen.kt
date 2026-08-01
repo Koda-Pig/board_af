@@ -1,6 +1,13 @@
 package za.co.boardaf.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -64,10 +71,7 @@ import za.co.boardaf.model.Problem
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.ProblemValidator
 import za.co.boardaf.model.PublicationState
-import za.co.boardaf.ui.theme.BoardDark
-import za.co.boardaf.ui.theme.BoardLine
-import za.co.boardaf.ui.theme.BoardMuted
-import za.co.boardaf.ui.theme.BoardPaper
+import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import za.co.boardaf.ui.theme.Gold
@@ -90,8 +94,11 @@ fun BoardScreen(
     val activeAssignments = if (state.isSetting) state.setter.draft.assignments else problem?.assignments.orEmpty()
     val surfaceMode = if (state.isSetting) BoardDisplayMode.SET else BoardDisplayMode.VIEW
     // Feet rule and details & review render no role palette, so leaving their holds
-    // tappable would assign whatever role happened to be active last.
-    val holdsEnabled = !state.isSetting || state.setter.guidedStep.roleForStep != null
+    // tappable would assign whatever role happened to be active last. Quick set has
+    // no steps: taps toggle membership, so holds stay live for the whole session.
+    val holdsEnabled = !state.isSetting ||
+        state.setter.mode == SetterMode.QUICK ||
+        state.setter.guidedStep.roleForStep != null
 
     BoxWithConstraints(
         modifier = Modifier
@@ -176,17 +183,22 @@ fun BoardScreen(
                         } else {
                             Text(
                                 "No problem selected. Open the library or tap + to set one.",
-                                color = BoardMuted,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp),
                             )
                         }
                     }
                 },
             ) { sheetPadding ->
+                // Width-first on the phone: the board fills the device width and the
+                // column scrolls the small overflow the sheet peek leaves. Height-first
+                // fitting kept everything on screen but rendered the wall too small to
+                // read or tap comfortably.
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(sheetPadding)
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 14.dp)
                         .padding(top = 14.dp),
                 ) {
@@ -194,23 +206,14 @@ fun BoardScreen(
                     SwipeableBoard(
                         enabled = !state.isSetting,
                         onSwipe = actions.onSelectAdjacentProblem,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        BoardSurface(
-                            board = state.board,
-                            assignments = activeAssignments,
-                            mode = surfaceMode,
-                            onHoldClick = actions.onTapHold,
+                        AnimatedProblemSurface(
+                            state = state,
+                            actions = actions,
+                            surfaceMode = surfaceMode,
+                            activeAssignments = activeAssignments,
                             holdsEnabled = holdsEnabled,
-                            // Height-first: the wall is taller than the space the
-                            // sheet leaves, so fitting to width would overflow.
-                            // Filling the box outright would stretch the photo.
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .aspectRatio(BoardGeometry.IMAGE_ASPECT_RATIO)
-                                .align(Alignment.Center),
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -219,6 +222,64 @@ fun BoardScreen(
         }
     }
 }
+
+/**
+ * Renders the board for the currently selected problem with a light slide-and-fade
+ * when swiping between problems — the cue that the problem actually changed.
+ * The slide direction follows the library order; selections that arrive from
+ * elsewhere (or enter/exit of the setter) just crossfade.
+ */
+@Composable
+private fun AnimatedProblemSurface(
+    state: BoardUiState,
+    actions: BoardActions,
+    surfaceMode: BoardDisplayMode,
+    activeAssignments: List<za.co.boardaf.model.ProblemAssignment>,
+    holdsEnabled: Boolean,
+) {
+    val activeProblems = state.problems.filter { it.publicationState != PublicationState.ARCHIVED }
+    val activeKey = if (state.isSetting) SETTER_SURFACE_KEY else state.selectedProblem?.id ?: "none"
+
+    AnimatedContent(
+        targetState = activeKey,
+        transitionSpec = {
+            val from = activeProblems.indexOfFirst { it.id == initialState }
+            val to = activeProblems.indexOfFirst { it.id == targetState }
+            val direction = if (from >= 0 && to >= 0 && from != to) {
+                if (to > from) 1 else -1
+            } else {
+                0
+            }
+            if (direction == 0) {
+                fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+            } else {
+                (slideInHorizontally(tween(220)) { it / 4 * direction } + fadeIn(tween(220))) togetherWith
+                    (slideOutHorizontally(tween(220)) { -it / 4 * direction } + fadeOut(tween(120)))
+            }
+        },
+        label = "problem-swipe",
+    ) { key ->
+        // Render the assignments belonging to this key, not the latest state, so the
+        // outgoing board keeps its own markers during the transition.
+        val assignments = when {
+            key == SETTER_SURFACE_KEY -> activeAssignments
+            else -> state.problems.firstOrNull { it.id == key }?.assignments
+                ?: activeAssignments
+        }
+        BoardSurface(
+            board = state.board,
+            assignments = assignments,
+            mode = surfaceMode,
+            onHoldClick = actions.onTapHold,
+            holdsEnabled = holdsEnabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(BoardGeometry.IMAGE_ASPECT_RATIO),
+        )
+    }
+}
+
+private const val SETTER_SURFACE_KEY = "setter-session"
 
 @Composable
 private fun SwipeableBoard(
@@ -309,7 +370,7 @@ private fun BoardHeader(state: BoardUiState, problem: Problem?) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = if (state.isSetting) "ROUTE SETTER" else "NOW VIEWING",
-                color = BoardMuted,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -341,11 +402,11 @@ private fun BoardHeader(state: BoardUiState, problem: Problem?) {
         if (!state.isSetting && problem != null) {
             StatusChip(state = problem.publicationState)
             Spacer(Modifier.width(8.dp))
-            Surface(color = BoardDark, shape = RoundedCornerShape(8.dp)) {
+            Surface(color = MaterialTheme.colorScheme.inverseSurface, shape = RoundedCornerShape(8.dp)) {
                 Text(
-                    text = problem.grade.label(state.gradeSystem),
+                    text = "${problem.grade.label(state.gradeSystem)} · ${problem.angleDegrees}°",
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = BoardPaper,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -355,12 +416,19 @@ private fun BoardHeader(state: BoardUiState, problem: Problem?) {
 
 @Composable
 fun StatusChip(state: PublicationState, modifier: Modifier = Modifier) {
+    // Tints ride on the theme's surface colors so the chip works on both schemes;
+    // hardcoded light pairs used to glare on the dark background (F28).
     val (container, content) = when (state) {
-        PublicationState.DRAFT -> BoardLine to BoardDark
-        PublicationState.NEEDS_REVIEW -> Coral.copy(alpha = 0.22f) to BoardDark
-        PublicationState.PUBLISHED -> Moss.copy(alpha = 0.30f) to BoardDark
-        PublicationState.BENCHMARK -> Gold.copy(alpha = 0.35f) to BoardDark
-        PublicationState.ARCHIVED -> Color(0xFFE4E4DC) to BoardMuted
+        PublicationState.DRAFT ->
+            MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurface
+        PublicationState.NEEDS_REVIEW ->
+            Coral.copy(alpha = 0.22f) to MaterialTheme.colorScheme.onSurface
+        PublicationState.PUBLISHED ->
+            Moss.copy(alpha = 0.30f) to MaterialTheme.colorScheme.onSurface
+        PublicationState.BENCHMARK ->
+            Gold.copy(alpha = 0.35f) to MaterialTheme.colorScheme.onSurface
+        PublicationState.ARCHIVED ->
+            MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(color = container, shape = RoundedCornerShape(7.dp), modifier = modifier) {
         Text(
@@ -411,9 +479,9 @@ private fun ProblemDetails(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${problem.grade.label(state.gradeSystem)} setter estimate · " +
+                        text = "${problem.grade.label(state.gradeSystem)} at ${problem.angleDegrees}° · " +
                             "${holdCountLabel(problem.assignments.size)} · ${problem.setter}",
-                        color = BoardMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -439,7 +507,7 @@ private fun ProblemDetails(
                                 fontWeight = FontWeight.Bold,
                             )
                             repairErrors.forEach {
-                                Text("• ${it.message}", style = MaterialTheme.typography.bodySmall, color = BoardMuted)
+                                Text("• ${it.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -447,19 +515,19 @@ private fun ProblemDetails(
             }
 
             if (problem.note.isNotBlank()) {
-                Text(problem.note, color = BoardMuted, style = MaterialTheme.typography.bodyMedium)
+                Text(problem.note, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
             if (problem.tags.isNotEmpty()) {
                 Text(
                     text = problem.tags.joinToString("  ·  "),
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
 
-            HorizontalDivider(color = BoardLine)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             MarkerLegend()
-            HorizontalDivider(color = BoardLine)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
             if (needsRepair) {
                 Button(

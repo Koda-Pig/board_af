@@ -288,12 +288,17 @@ private fun HoldTarget(
         }
     }
 
+    // Climb view is read-only, so the modifier is omitted rather than disabled:
+    // clickable(enabled = false) still publishes an OnClick action, which makes a
+    // screen reader announce all 43 holds as disabled buttons.
+    val interactive = enabled && mode != BoardDisplayMode.VIEW
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(48.dp)
             .semantics { contentDescription = description }
-            .clickable(enabled = enabled && mode != BoardDisplayMode.VIEW, onClick = onClick),
+            .then(if (interactive) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
         when {
             mode == BoardDisplayMode.CONFIGURE -> CapabilityDot(hold = hold, overridden = overridden)

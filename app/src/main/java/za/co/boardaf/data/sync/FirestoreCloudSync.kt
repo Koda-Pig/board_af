@@ -201,6 +201,7 @@ class FirestoreCloudSync(
             revision = doc.getLong("revision") ?: 0L,
             pendingWrite = doc.metadata.hasPendingWrites(),
             deleted = doc.getBoolean("deleted") == true,
+            deletedAt = doc.getTimestamp("deletedAt")?.toDate()?.time,
         )
     }
 
@@ -264,6 +265,8 @@ class FirestoreCloudSync(
                         boardDoc.collection("problems").document(delete.id),
                         mapOf(
                             "deleted" to true,
+                            // Starts the retirement clock for local tombstones.
+                            "deletedAt" to FieldValue.serverTimestamp(),
                             "revision" to delete.revision,
                             "updatedAt" to FieldValue.serverTimestamp(),
                             "updatedBy" to uid,

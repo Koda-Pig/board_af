@@ -24,6 +24,7 @@ import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.HoldCapability
 import za.co.boardaf.model.HoldClassification
 import za.co.boardaf.model.Problem
+import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemAssignment
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.PublicationState
@@ -205,6 +206,7 @@ object SnapshotCodec {
         put("setter", problem.setter)
         put("note", problem.note)
         put("tags", JsonArray(problem.tags.map { JsonPrimitive(it) }))
+        put("angle", problem.angleDegrees)
         put("feetRule", problem.feetRule.name)
         put("startRule", problem.startRule.name)
         put("finishRule", problem.finishRule.name)
@@ -236,6 +238,10 @@ object SnapshotCodec {
             setter = json["setter"]?.jsonPrimitive?.content.orEmpty(),
             note = json["note"]?.jsonPrimitive?.content.orEmpty(),
             tags = (json["tags"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty(),
+            // Additive since angle-per-problem landed; older records were set at the default incline.
+            angleDegrees = json["angle"]?.jsonPrimitive?.longOrNull?.toInt()
+                ?.let { ProblemAngle.clamp(it) }
+                ?: ProblemAngle.DEFAULT_DEGREES,
             feetRule = parseEnum<FeetRule>(json.require("feetRule").jsonPrimitive.content),
             startRule = parseEnum<StartRule>(json.require("startRule").jsonPrimitive.content),
             finishRule = parseEnum<FinishRule>(json.require("finishRule").jsonPrimitive.content),

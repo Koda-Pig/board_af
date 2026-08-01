@@ -61,6 +61,7 @@ import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.setter.GuidedStep
+import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.ui.theme.BoardDark
 import za.co.boardaf.ui.theme.BoardPaper
 import za.co.boardaf.ui.theme.Forest
@@ -85,12 +86,14 @@ data class BoardActions(
     val onSetFeetRule: (FeetRule) -> Unit = {},
     val onDraftNameChange: (String) -> Unit = {},
     val onDraftGradeChange: (BoulderGrade) -> Unit = {},
+    val onDraftAngleChange: (Int) -> Unit = {},
     val onDraftAccentChange: (Accent) -> Unit = {},
     val onDraftNoteChange: (String) -> Unit = {},
     val onToggleDraftTag: (String) -> Unit = {},
     val onGuidedNext: () -> Unit = {},
     val onGuidedBack: () -> Unit = {},
     val onGoToGuidedStep: (GuidedStep) -> Unit = {},
+    val onSetSetterMode: (SetterMode) -> Unit = {},
     val onArchiveProblem: (String) -> Unit = {},
     val onUnarchiveProblem: (String) -> Unit = {},
     val onDeleteProblem: (String) -> Unit = {},
@@ -148,12 +151,14 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onSetFeetRule = viewModel::setFeetRule,
             onDraftNameChange = viewModel::setDraftName,
             onDraftGradeChange = viewModel::setDraftGrade,
+            onDraftAngleChange = viewModel::setDraftAngle,
             onDraftAccentChange = viewModel::setDraftAccent,
             onDraftNoteChange = viewModel::setDraftNote,
             onToggleDraftTag = viewModel::toggleDraftTag,
             onGuidedNext = viewModel::guidedNext,
             onGuidedBack = viewModel::guidedBack,
             onGoToGuidedStep = viewModel::goToGuidedStep,
+            onSetSetterMode = viewModel::setSetterMode,
             onArchiveProblem = viewModel::archiveProblem,
             onUnarchiveProblem = viewModel::unarchiveProblem,
             onDeleteProblem = viewModel::deleteProblem,
@@ -248,7 +253,8 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
     }
 
     BackHandler(enabled = state.isSetting) {
-        if (state.setter.guidedStep.ordinal > 0) {
+        // Quick set has no steps to walk; back just closes the (autosaved) session.
+        if (state.setter.mode == SetterMode.GUIDED && state.setter.guidedStep.ordinal > 0) {
             viewModel.guidedBack()
         } else {
             viewModel.cancelSetting()

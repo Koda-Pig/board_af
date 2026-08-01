@@ -59,7 +59,7 @@ data class HoldDefinition(
 
 object BoardDefaults {
     const val BOARD_NAME = "Home board"
-    const val BOARD_ANGLE_DEGREES = 20
+    // No board-level angle: the wall adjusts 0–90° and each problem records its own.
     const val BOARD_HEIGHT_METERS = 4.8f
 
     /** Midway between the h36 row (y=1248) and the h37 kicker row (y=1411) in source pixels. */
@@ -90,7 +90,7 @@ object BoardDefaults {
                 setter = "You",
                 note = "Stay square through the middle, then commit to the blue finish.",
                 assignments = listOf(
-                    assign("h43", ProblemHoldRole.START), assign("h34", ProblemHoldRole.FOOT_ONLY),
+                    assign("h35", ProblemHoldRole.START), assign("h34", ProblemHoldRole.FOOT_ONLY),
                     assign("h31", ProblemHoldRole.REGULAR), assign("h21", ProblemHoldRole.REGULAR),
                     assign("h17", ProblemHoldRole.FOOT_ONLY), assign("h13", ProblemHoldRole.FINISH),
                 ),
@@ -103,7 +103,7 @@ object BoardDefaults {
                 setter = "You",
                 note = "A relaxed green warm-up with a long final reach.",
                 assignments = listOf(
-                    assign("h37", ProblemHoldRole.START), assign("h27", ProblemHoldRole.REGULAR),
+                    assign("h36", ProblemHoldRole.START), assign("h27", ProblemHoldRole.REGULAR),
                     assign("h20", ProblemHoldRole.FOOT_ONLY), assign("h16", ProblemHoldRole.REGULAR),
                     assign("h06", ProblemHoldRole.FINISH),
                 ),
@@ -116,7 +116,7 @@ object BoardDefaults {
                 setter = "Maya",
                 note = "Compression on the left panel. The h14 catch is the whole game.",
                 assignments = listOf(
-                    assign("h40", ProblemHoldRole.START), assign("h29", ProblemHoldRole.REGULAR),
+                    assign("h32", ProblemHoldRole.START), assign("h29", ProblemHoldRole.REGULAR),
                     assign("h25", ProblemHoldRole.FOOT_ONLY), assign("h19", ProblemHoldRole.REGULAR),
                     assign("h14", ProblemHoldRole.REGULAR), assign("h05", ProblemHoldRole.REGULAR),
                     assign("h01", ProblemHoldRole.FINISH),

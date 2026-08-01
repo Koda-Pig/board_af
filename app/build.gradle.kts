@@ -48,6 +48,12 @@ android {
         // This private app intentionally targets the installed Android 16 QPR2 SDK.
         disable += setOf("OldTargetApi", "GradleDependency")
     }
+
+    testOptions {
+        // BoardViewModel unit tests construct a plain Application(); the stub
+        // android.jar would throw from it without this.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

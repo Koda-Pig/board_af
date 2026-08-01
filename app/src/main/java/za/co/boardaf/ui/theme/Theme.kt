@@ -39,6 +39,9 @@ private val BoardLightColorScheme = lightColorScheme(
     surfaceVariant = Color(0xFFE9EDDE),
     onSurfaceVariant = BoardMuted,
     outline = BoardLine,
+    // Grade pills and other "flipped" chips: dark on light, light on dark.
+    inverseSurface = BoardDark,
+    inverseOnSurface = BoardPaper,
 )
 
 private val BoardDarkColorScheme = darkColorScheme(
@@ -56,6 +59,8 @@ private val BoardDarkColorScheme = darkColorScheme(
     surfaceVariant = Color(0xFF323932),
     onSurfaceVariant = Color(0xFFB0B8A8),
     outline = Color(0xFF4A5248),
+    inverseSurface = BoardPaper,
+    inverseOnSurface = BoardDark,
 )
 
 @Composable

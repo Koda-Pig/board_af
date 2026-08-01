@@ -19,7 +19,6 @@ import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.FinishRule
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.StartRule
-import za.co.boardaf.ui.theme.BoardMuted
 
 /** Persistent plain-language feet rule banner shown in setter, detail and climb states. */
 @Composable
@@ -54,7 +53,7 @@ fun FeetRuleBanner(
                 Text(
                     text = feetRule.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -92,7 +91,7 @@ private fun RuleLine(role: ProblemHoldRole, text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = BoardMuted,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

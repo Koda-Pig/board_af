@@ -16,8 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -43,14 +43,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.BoardUiState
 import za.co.boardaf.model.BoardGeometry
+import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.BoardZoneType
+import za.co.boardaf.model.ConfiguredBoard
 import za.co.boardaf.model.GradeSystem
-import za.co.boardaf.ui.theme.BoardDark
-import za.co.boardaf.ui.theme.BoardLine
-import za.co.boardaf.ui.theme.BoardMuted
+import za.co.boardaf.model.ProblemValidator
+import za.co.boardaf.model.PublicationState
 import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Gold
-import za.co.boardaf.ui.theme.Moss
 import za.co.boardaf.ui.theme.Sky
 
 @Composable
@@ -63,6 +63,23 @@ fun SetupScreen(
     val mainCount = board.holds.count { it.zone == BoardZoneType.MAIN }
     val kickerCount = board.holds.count { it.zone == BoardZoneType.KICKBOARD }
     var setupHintDismissed by rememberSaveable { mutableStateOf(false) }
+    var boundaryDraft by remember(board.kickboardTopY) {
+        mutableFloatStateOf(board.kickboardTopY)
+    }
+    // A boundary or kickboard change re-validates every problem and can silently
+    // demote published ones to Needs review — that deserves a warning first.
+    var pendingChange by remember { mutableStateOf<PendingSetupChange?>(null) }
+
+    fun demotedBy(proposed: BoardSetup): List<String> {
+        val proposedBoard = ConfiguredBoard.from(proposed)
+        return state.problems
+            .filter {
+                it.publicationState == PublicationState.PUBLISHED ||
+                    it.publicationState == PublicationState.BENCHMARK
+            }
+            .filter { ProblemValidator.hasErrors(ProblemValidator.validate(it, proposedBoard)) }
+            .map { problemDisplayName(it.name) }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -72,7 +89,7 @@ fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Text("BOARD SETUP", style = MaterialTheme.typography.labelSmall, color = BoardMuted, fontWeight = FontWeight.Bold)
+            Text("BOARD SETUP", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             Text(board.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         }
 
@@ -87,13 +104,13 @@ fun SetupScreen(
                     ) {
                         Text("Storage notices", fontWeight = FontWeight.Bold)
                         state.storageIssues.forEach { issue ->
-                            Text("• ${issue.message}", style = MaterialTheme.typography.bodySmall, color = BoardMuted)
+                            Text("• ${issue.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (state.unreadableRecords.isNotEmpty()) {
                             Text(
                                 "${state.unreadableRecords.size} unreadable record(s) are retained inside the app's local store.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = BoardMuted,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -116,12 +133,11 @@ fun SetupScreen(
                                 "(currently $kickerCount of them). Adjust the boundary or tap holds below to " +
                                 "correct exceptions, then confirm.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = BoardMuted,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
                                 onClick = actions.onConfirmBoardSetup,
-                                colors = ButtonDefaults.buttonColors(containerColor = BoardDark, contentColor = Color.White),
                             ) {
                                 Text("Looks right — confirm")
                             }
@@ -156,13 +172,13 @@ fun SetupScreen(
             ) {
                 CapabilityLegendDot(color = Sky, filled = true)
                 Spacer(Modifier.width(6.dp))
-                Text("Hands and feet", style = MaterialTheme.typography.labelSmall, color = BoardMuted)
+                Text("Hands and feet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
                 CapabilityLegendDot(color = Gold, filled = false)
                 Spacer(Modifier.width(6.dp))
-                Text("Foot only", style = MaterialTheme.typography.labelSmall, color = BoardMuted)
+                Text("Foot only", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
-                Text("White ring = corrected", style = MaterialTheme.typography.labelSmall, color = BoardMuted)
+                Text("White ring = corrected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
@@ -170,7 +186,7 @@ fun SetupScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, BoardLine, RoundedCornerShape(14.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(16.dp),
@@ -185,23 +201,27 @@ fun SetupScreen(
                             } else {
                                 "This board has no kickboard."
                             },
-                            color = BoardMuted,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
                     Switch(
                         checked = board.hasKickboard,
-                        onCheckedChange = actions.onSetKickboardEnabled,
+                        onCheckedChange = { enabled ->
+                            val demoted = demotedBy(state.setup.withKickboardEnabled(enabled))
+                            if (demoted.isEmpty()) {
+                                actions.onSetKickboardEnabled(enabled)
+                            } else {
+                                pendingChange = PendingSetupChange.Kickboard(enabled, demoted)
+                            }
+                        },
                     )
                 }
                 if (board.hasKickboard) {
-                    var boundaryDraft by remember(board.kickboardTopY) {
-                        mutableFloatStateOf(board.kickboardTopY)
-                    }
                     Text(
                         "Boundary · holds below default to foot-only. Tap a hold above to correct exceptions.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = BoardMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = "Y = ${"%.0f".format(boundaryDraft * 100)}%",
@@ -212,7 +232,12 @@ fun SetupScreen(
                         value = boundaryDraft,
                         onValueChange = { boundaryDraft = it },
                         onValueChangeFinished = {
-                            actions.onSetKickboardBoundary(boundaryDraft)
+                            val demoted = demotedBy(state.setup.withBoundary(boundaryDraft))
+                            if (demoted.isEmpty()) {
+                                actions.onSetKickboardBoundary(boundaryDraft)
+                            } else {
+                                pendingChange = PendingSetupChange.Boundary(boundaryDraft, demoted)
+                            }
                         },
                         valueRange = 0.4f..0.98f,
                     )
@@ -224,17 +249,17 @@ fun SetupScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, BoardLine, RoundedCornerShape(14.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surface),
             ) {
-                SetupValue("Wall angle", "${board.angleDegrees}°")
-                HorizontalDivider(color = BoardLine)
+                SetupValue("Wall angle", "Set per problem (0–90°)")
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                 SetupValue("Climbing height", "${board.heightMeters} m")
-                HorizontalDivider(color = BoardLine)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                 SetupValue("Mapped holds", "${board.holds.size}")
                 if (board.setupConfirmedAt != null) {
-                    HorizontalDivider(color = BoardLine)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                     SetupValue("Zones", "Confirmed ✓")
                 }
             }
@@ -244,7 +269,7 @@ fun SetupScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, BoardLine, RoundedCornerShape(14.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(16.dp),
@@ -253,7 +278,7 @@ fun SetupScreen(
                 Text("Boulder grade system", fontWeight = FontWeight.Bold)
                 Text(
                     "Choose how problem difficulties are shown across the app. Grades are setter estimates.",
-                    color = BoardMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -280,7 +305,7 @@ fun SetupScreen(
                         Text(
                             "Hold centers are stored as normalized photo coordinates, and each hold stores " +
                                 "its zone and capability. Validation reads the stored classification, not the line.",
-                            color = BoardMuted,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -288,6 +313,57 @@ fun SetupScreen(
             }
         }
     }
+
+    pendingChange?.let { change ->
+        val count = change.demoted.size
+        val listed = change.demoted.take(3).joinToString(", ") { "“$it”" }
+        val extra = (count - 3).takeIf { it > 0 }?.let { " and $it more" }.orEmpty()
+        AlertDialog(
+            onDismissRequest = {
+                boundaryDraft = board.kickboardTopY
+                pendingChange = null
+            },
+            title = { Text(if (count == 1) "Unpublish this problem?" else "Unpublish $count problems?") },
+            text = {
+                Text(
+                    if (count == 1) {
+                        "$listed will move to Needs review because this change breaks its " +
+                            "holds. It needs repair and a fresh forerun to publish again."
+                    } else {
+                        "$listed$extra will move to Needs review because this change breaks " +
+                            "their holds. Each needs repair and a fresh forerun to publish again."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        when (change) {
+                            is PendingSetupChange.Boundary -> actions.onSetKickboardBoundary(change.y)
+                            is PendingSetupChange.Kickboard -> actions.onSetKickboardEnabled(change.enabled)
+                        }
+                        pendingChange = null
+                    },
+                ) { Text("Apply anyway") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        boundaryDraft = board.kickboardTopY
+                        pendingChange = null
+                    },
+                ) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/** A Setup edit awaiting confirmation because it would demote published problems. */
+private sealed interface PendingSetupChange {
+    val demoted: List<String>
+
+    data class Boundary(val y: Float, override val demoted: List<String>) : PendingSetupChange
+    data class Kickboard(val enabled: Boolean, override val demoted: List<String>) : PendingSetupChange
 }
 
 @Composable
@@ -313,7 +389,7 @@ private fun SetupValue(label: String, value: String) {
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = BoardMuted, modifier = Modifier.weight(1f))
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         Text(value, fontWeight = FontWeight.Bold)
     }
 }
