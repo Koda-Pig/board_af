@@ -51,8 +51,8 @@ around it.
 - Comments explain *why*, not *what*. Several non-obvious decisions here are
   load-bearing and commented as such — the deliberately permissive
   `DraftProblem.hasContent`, the tombstone rules in `SyncPlanner`, and the
-  height-first sizing of `BoardSurface` on phones. Read the comment before
-  "tidying" any of them.
+  width-first sizing of the board on phones in `BoardScreen`. Read the comment
+  before "tidying" any of them.
 - Data safety beats tidiness. Nothing in the sync or autosave paths may discard
   user work in order to keep the library clean.
 - Keep validation, storage, and setter history in pure testable collaborators;
