@@ -42,6 +42,13 @@ clean apart from a pre-existing Gradle-version notice.
       untested is the mechanical Firestore batch mapping. Worth doing with the
       refactor, not before it.
 
+### System back button exits the app instead of navigating back
+
+- [ ] Pressing the OS back button closes the app rather than popping to the
+      previous in-app screen. It should navigate back through the app's screen
+      stack the way in-app back affordances do, only exiting the app once
+      there's nowhere left to go back to.
+
 ### No seed exercises a kickboard foot hold
 
 - [ ] The three seed starts that sat on kickboard holds were moved onto the main
