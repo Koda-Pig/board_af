@@ -65,7 +65,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.BoardUiState
-import za.co.boardaf.model.BoardGeometry
 import za.co.boardaf.model.IssueSeverity
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.ProblemHoldRole
@@ -76,6 +75,12 @@ import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import kotlinx.coroutines.launch
 import za.co.boardaf.ui.theme.Moss
+
+/**
+ * The board sheet's resting height. Shared with [BoardAfApp] so the snackbar can
+ * be lifted clear of the peek instead of covering it.
+ */
+internal val BOARD_SHEET_PEEK_HEIGHT = 100.dp
 
 internal fun problemDisplayName(name: String): String = name.ifBlank { "Untitled draft" }
 
@@ -128,10 +133,11 @@ fun BoardScreen(
                                 mode = surfaceMode,
                                 onHoldClick = actions.onTapHold,
                                 holdsEnabled = holdsEnabled,
+                                photoPath = state.boardPhotoPath,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .widthIn(max = 620.dp)
-                                    .aspectRatio(BoardGeometry.IMAGE_ASPECT_RATIO),
+                                    .aspectRatio(state.board.aspectRatio),
                             )
                         }
                     }
@@ -152,7 +158,7 @@ fun BoardScreen(
             val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
             BottomSheetScaffold(
                 scaffoldState = scaffoldState,
-                sheetPeekHeight = 100.dp,
+                sheetPeekHeight = BOARD_SHEET_PEEK_HEIGHT,
                 sheetContainerColor = MaterialTheme.colorScheme.surface,
                 sheetContent = {
                     Column(
@@ -267,9 +273,10 @@ private fun AnimatedProblemSurface(
             mode = surfaceMode,
             onHoldClick = actions.onTapHold,
             holdsEnabled = holdsEnabled,
+            photoPath = state.boardPhotoPath,
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(BoardGeometry.IMAGE_ASPECT_RATIO),
+                .aspectRatio(state.board.aspectRatio),
         )
     }
 }

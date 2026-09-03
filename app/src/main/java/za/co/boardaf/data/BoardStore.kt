@@ -17,6 +17,29 @@ data class UnreadableRecord(
     }
 }
 
+/**
+ * A deleted problem kept for recovery. The tombstone id alone propagates the
+ * delete; this keeps the payload as well, so "Recently deleted" can put the
+ * problem back without a round trip to the server.
+ */
+data class DeletedProblem(
+    val problem: Problem,
+    val deletedAt: Long,
+)
+
+object DeletedProblems {
+    /**
+     * How long a deleted problem stays recoverable on this device. Matches the
+     * remote tombstone retention so the two windows don't disagree, but they are
+     * independent: retiring a *payload* only ends recovery, while retiring the
+     * *tombstone* would stop the delete propagating.
+     */
+    const val RETENTION_MS: Long = 30L * 24 * 60 * 60 * 1000
+
+    fun pruned(records: List<DeletedProblem>, now: Long): List<DeletedProblem> =
+        records.filter { now - it.deletedAt < RETENTION_MS }
+}
+
 data class LibrarySnapshot(
     val setup: BoardSetup,
     val problems: List<Problem>,
@@ -28,6 +51,12 @@ data class LibrarySnapshot(
      * propagate the delete instead of re-adopting the record from the server.
      */
     val deletedProblemIds: Set<String> = emptySet(),
+    /**
+     * Recoverable payloads for the tombstones above. Every id here is also in
+     * [deletedProblemIds]; the reverse need not hold — a tombstone adopted from
+     * another device before this one ever saw the problem has no payload.
+     */
+    val deletedProblems: List<DeletedProblem> = emptyList(),
 )
 
 enum class StorageIssueCode {

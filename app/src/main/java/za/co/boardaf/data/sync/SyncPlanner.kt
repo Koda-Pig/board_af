@@ -1,6 +1,8 @@
 package za.co.boardaf.data.sync
 
+import za.co.boardaf.data.DeletedProblem
 import za.co.boardaf.data.LibrarySnapshot
+import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.Problem
 
 /**
@@ -40,6 +42,11 @@ object SyncPlanner {
         val pushes = mutableListOf<ProblemPush>()
         val deletes = mutableListOf<ProblemDelete>()
         val tombstones = local.deletedProblemIds.toMutableSet()
+        // Recoverable payloads, keyed by id. LinkedHashMap so the merged snapshot
+        // encodes deterministically — the ViewModel compares those encodings.
+        val recoverable = local.deletedProblems.associateByTo(
+            LinkedHashMap(),
+        ) { it.problem.id }
 
         val localById = local.problems.associateBy { it.id }
         val localEncoded = local.problems.associate { it.id to SyncCodec.encodeProblem(it) }
@@ -82,9 +89,14 @@ object SyncPlanner {
                     now - record.deletedAt >= TOMBSTONE_RETENTION_MS
                 if (retired) {
                     tombstones -= id
+                    // The payload's only job was recovery, which ends with the tombstone.
+                    recoverable -= id
                 } else if (id !in tombstones) {
                     tombstones += id
                     if (localProblem != null) {
+                        // Keep the copy this device still has, so a delete made on
+                        // another device is just as recoverable as a local one.
+                        recoverable[id] = DeletedProblem(localProblem, record.deletedAt ?: now)
                         issues += "\"${localProblem.name}\" was deleted on another device."
                     }
                 }
@@ -183,7 +195,7 @@ object SyncPlanner {
             }
 
             baselines.board == localBoardEncoded || baselines.board == null -> {
-                mergedSetup = boardRecord.setup
+                mergedSetup = boardRecord.adoptedSetup(local.setup)
                 mergedGradeSystem = boardRecord.gradeSystem
                 mergedSetterMode = boardRecord.setterMode
                 boardBaseline = boardRecord.encoded
@@ -195,7 +207,7 @@ object SyncPlanner {
 
             else -> {
                 // Both edited the one board setup; the server version wins but the event is reported.
-                mergedSetup = boardRecord.setup
+                mergedSetup = boardRecord.adoptedSetup(local.setup)
                 mergedGradeSystem = boardRecord.gradeSystem
                 mergedSetterMode = boardRecord.setterMode
                 boardBaseline = boardRecord.encoded
@@ -219,7 +231,10 @@ object SyncPlanner {
             )
         }
 
-        if (tombstones != local.deletedProblemIds) changedLocally = true
+        val mergedDeleted = recoverable.values.toList()
+        if (tombstones != local.deletedProblemIds || mergedDeleted != local.deletedProblems) {
+            changedLocally = true
+        }
 
         val mergedSnapshot = if (changedLocally) {
             LibrarySnapshot(
@@ -229,6 +244,7 @@ object SyncPlanner {
                 setterMode = mergedSetterMode,
                 unreadable = local.unreadable,
                 deletedProblemIds = tombstones,
+                deletedProblems = mergedDeleted,
             )
         } else {
             null
@@ -243,4 +259,13 @@ object SyncPlanner {
             issues = issues,
         )
     }
+
+    /**
+     * Adopting a remote board setup must not take the board photo with it: the
+     * photo file exists only on the device that captured it, and the sync document
+     * carries no photo at all (see [SyncCodec.encodeBoard]). Whatever this device
+     * is displaying stays displayed.
+     */
+    private fun RemoteBoardRecord.adoptedSetup(local: BoardSetup): BoardSetup =
+        setup.copy(photo = local.photo)
 }

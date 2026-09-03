@@ -24,6 +24,30 @@ enum class HoldCapability(val label: String) {
         get() = true
 }
 
+/**
+ * A photo of the physical board, taken in-app and stored in the app's own files
+ * directory. Only the file name is persisted: the directory is resolved at read
+ * time, so the record survives the app's data directory moving.
+ *
+ * The pixel size is recorded so the board frame can take the photo's own aspect
+ * ratio. Hold centers are normalized to the frame, so a frame matching the photo
+ * shows the wall undistorted; forcing every photo into the bundled image's ratio
+ * would stretch it instead.
+ */
+data class BoardPhoto(
+    val fileName: String,
+    val widthPx: Int,
+    val heightPx: Int,
+    val capturedAt: Long,
+) {
+    val aspectRatio: Float
+        get() = if (widthPx > 0 && heightPx > 0) {
+            widthPx.toFloat() / heightPx.toFloat()
+        } else {
+            BoardGeometry.IMAGE_ASPECT_RATIO
+        }
+}
+
 data class HoldClassification(
     val zone: BoardZoneType,
     val capability: HoldCapability,
@@ -39,6 +63,12 @@ data class BoardSetup(
     val kickboardTopY: Float,
     val confirmedAt: Long? = null,
     val classifications: Map<String, HoldClassification> = emptyMap(),
+    /**
+     * The setter's own photo of this board, or null to render the bundled one.
+     * Device-local: the file never travels with the synced board document, so
+     * each device keeps whichever photo was taken on it.
+     */
+    val photo: BoardPhoto? = null,
 ) {
     companion object {
         fun default(holds: List<HoldDefinition> = BoardDefaults.holds): BoardSetup {
@@ -109,11 +139,16 @@ data class ConfiguredBoard(
     val kickboardTopY: Float,
     val setupConfirmedAt: Long?,
     val holds: List<ConfiguredHold>,
+    val photo: BoardPhoto? = null,
 ) {
     val holdsById: Map<String, ConfiguredHold> = holds.associateBy { it.id }
 
     val hasKickboard: Boolean
         get() = kickboardEnabled
+
+    /** The board frame's shape: the setter's photo when there is one, else the bundled image. */
+    val aspectRatio: Float
+        get() = photo?.aspectRatio ?: BoardGeometry.IMAGE_ASPECT_RATIO
 
     companion object {
         fun from(
@@ -125,6 +160,7 @@ data class ConfiguredBoard(
             kickboardEnabled = setup.kickboardEnabled,
             kickboardTopY = setup.kickboardTopY,
             setupConfirmedAt = setup.confirmedAt,
+            photo = setup.photo,
             holds = holds.map { hold ->
                 val classification = setup.classifications[hold.id] ?: setup.classify(hold.point.y)
                 ConfiguredHold(

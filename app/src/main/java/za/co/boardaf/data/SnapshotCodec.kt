@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import za.co.boardaf.model.Accent
+import za.co.boardaf.model.BoardPhoto
 import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.BoardZoneType
 import za.co.boardaf.model.BoulderGrade
@@ -62,6 +63,18 @@ object SnapshotCodec {
             put(
                 "deletedProblems",
                 JsonArray(snapshot.deletedProblemIds.sorted().map { JsonPrimitive(it) }),
+            )
+            put(
+                // Distinct from "deletedProblems", which is the id list above.
+                "deletedProblemRecords",
+                JsonArray(
+                    snapshot.deletedProblems.map { record ->
+                        buildJsonObject {
+                            put("deletedAt", record.deletedAt)
+                            put("problem", encodeProblem(record.problem))
+                        }
+                    },
+                ),
             )
             put(
                 "unreadable",
@@ -146,6 +159,23 @@ object SnapshotCodec {
             ?.toSet()
             .orEmpty()
 
+        // Additive; absent in older snapshots, which means nothing is recoverable.
+        // A record that won't decode is skipped rather than failing the load: it
+        // only costs the ability to restore one already-deleted problem.
+        val deletedProblems = (root["deletedProblemRecords"] as? JsonArray)
+            ?.mapNotNull { element ->
+                runCatching {
+                    val record = element.jsonObject
+                    DeletedProblem(
+                        problem = decodeProblem(record.require("problem").jsonObject),
+                        deletedAt = record.require("deletedAt").jsonPrimitive.longOrNull
+                            ?: error("deletedAt is not a number"),
+                    )
+                }.getOrNull()
+            }
+            ?.filter { it.problem.id in deletedProblemIds }
+            .orEmpty()
+
         return DecodeResult.Success(
             snapshot = LibrarySnapshot(
                 setup = setup,
@@ -154,16 +184,34 @@ object SnapshotCodec {
                 setterMode = setterMode,
                 unreadable = unreadable,
                 deletedProblemIds = deletedProblemIds,
+                deletedProblems = deletedProblems,
             ),
             issues = issues,
         )
     }
 
-    fun encodeSetup(setup: BoardSetup): JsonObject = buildJsonObject {
+    /**
+     * [includePhoto] is false for the cloud-sync board document: the photo file
+     * lives only on the device that took it, so syncing its metadata would leave
+     * other devices pointing at a file they don't have.
+     */
+    fun encodeSetup(setup: BoardSetup, includePhoto: Boolean = true): JsonObject = buildJsonObject {
         put("kickboardEnabled", setup.kickboardEnabled)
         put("kickboardTopY", setup.kickboardTopY.toDouble())
         val confirmedAt = setup.confirmedAt
         if (confirmedAt != null) put("confirmedAt", confirmedAt) else put("confirmedAt", JsonNull)
+        val photo = setup.photo
+        if (includePhoto && photo != null) {
+            put(
+                "photo",
+                buildJsonObject {
+                    put("fileName", photo.fileName)
+                    put("widthPx", photo.widthPx)
+                    put("heightPx", photo.heightPx)
+                    put("capturedAt", photo.capturedAt)
+                },
+            )
+        }
         put(
             "holds",
             JsonArray(
@@ -195,8 +243,22 @@ object SnapshotCodec {
                 ?: error("kickboardTopY is not a number"),
             confirmedAt = json["confirmedAt"]?.jsonPrimitive?.longOrNull,
             classifications = classifications,
+            // Additive since in-app board capture landed; absent means the bundled
+            // photo. A malformed record falls back to it rather than failing the
+            // whole setup, which would cost the hold classifications too.
+            photo = (json["photo"] as? JsonObject)?.let { runCatching { decodePhoto(it) }.getOrNull() },
         )
     }
+
+    private fun decodePhoto(json: JsonObject): BoardPhoto = BoardPhoto(
+        fileName = json.require("fileName").jsonPrimitive.content,
+        widthPx = json.require("widthPx").jsonPrimitive.longOrNull?.toInt()
+            ?: error("widthPx is not a number"),
+        heightPx = json.require("heightPx").jsonPrimitive.longOrNull?.toInt()
+            ?: error("heightPx is not a number"),
+        capturedAt = json.require("capturedAt").jsonPrimitive.longOrNull
+            ?: error("capturedAt is not a number"),
+    )
 
     fun encodeProblem(problem: Problem): JsonObject = buildJsonObject {
         put("id", problem.id)

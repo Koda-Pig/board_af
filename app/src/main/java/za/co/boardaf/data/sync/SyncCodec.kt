@@ -28,7 +28,9 @@ object SyncCodec {
 
     fun encodeBoard(setup: BoardSetup, gradeSystem: GradeSystem, setterMode: SetterMode): String =
         buildJsonObject {
-            put("board", SnapshotCodec.encodeSetup(setup))
+            // Photo excluded: the file is device-local, so syncing its metadata
+            // would point other devices at an image they cannot read.
+            put("board", SnapshotCodec.encodeSetup(setup, includePhoto = false))
             put(
                 "settings",
                 buildJsonObject {

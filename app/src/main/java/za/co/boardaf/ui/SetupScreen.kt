@@ -1,5 +1,8 @@
 package za.co.boardaf.ui
 
+import androidx.core.net.toUri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,10 +19,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -41,8 +47,10 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.text.DateFormat
+import java.util.Date
 import za.co.boardaf.BoardUiState
-import za.co.boardaf.model.BoardGeometry
+import za.co.boardaf.model.BoardPhoto
 import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.BoardZoneType
 import za.co.boardaf.model.ConfiguredBoard
@@ -156,9 +164,10 @@ fun SetupScreen(
                 assignments = emptyList(),
                 mode = BoardDisplayMode.CONFIGURE,
                 onHoldClick = actions.onToggleHoldCapability,
+                photoPath = state.boardPhotoPath,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(BoardGeometry.IMAGE_ASPECT_RATIO),
+                    .aspectRatio(board.aspectRatio),
             )
         }
 
@@ -177,6 +186,10 @@ fun SetupScreen(
                 Spacer(Modifier.width(16.dp))
                 Text("White ring = corrected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+
+        item {
+            BoardPhotoCard(photo = board.photo, actions = actions)
         }
 
         item {
@@ -352,6 +365,82 @@ fun SetupScreen(
                 ) { Text("Cancel") }
             },
         )
+    }
+}
+
+/**
+ * Re-shoot the wall from inside the app. The capture is written by the user's own
+ * camera app into a FileProvider URI, so no CAMERA permission is involved.
+ *
+ * Hold positions are normalized to the frame and are *not* re-detected, so a photo
+ * taken from a different spot leaves every hold marker off its hold. The board
+ * preview directly above this card is the check for that, and the warning says so.
+ */
+@Composable
+private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
+    var error by remember { mutableStateOf<String?>(null) }
+    val captureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { saved -> actions.onBoardPhotoCaptured(saved) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Board photo", fontWeight = FontWeight.Bold)
+        Text(
+            text = if (photo == null) {
+                "Showing the photo bundled with the app. Take your own when the wall " +
+                    "or the lighting has changed."
+            } else {
+                "Your photo · ${photo.widthPx} × ${photo.heightPx} · taken " +
+                    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(photo.capturedAt))
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(10.dp)) {
+            Text(
+                "Hold positions are not re-detected. Shoot the whole wall square-on, " +
+                    "from where the bundled photo was taken, then check the markers " +
+                    "above still sit on their holds.",
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = Coral)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = {
+                    error = null
+                    val target = actions.onBeginBoardPhotoCapture()
+                    if (target == null) {
+                        error = "Couldn't prepare a place to save the photo."
+                        return@Button
+                    }
+                    runCatching { captureLauncher.launch(target.toUri()) }.onFailure {
+                        // No camera app: release the destination we just claimed.
+                        actions.onBoardPhotoCaptured(false)
+                        error = "No camera app is available on this device."
+                    }
+                },
+            ) {
+                Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (photo == null) "Take a board photo" else "Retake photo")
+            }
+            if (photo != null) {
+                TextButton(onClick = actions.onClearBoardPhoto) { Text("Use bundled") }
+            }
+        }
     }
 }
 

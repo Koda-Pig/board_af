@@ -1,5 +1,6 @@
 package za.co.boardaf.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -37,6 +39,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -53,6 +57,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import za.co.boardaf.R
 import za.co.boardaf.model.BoardTransform
 import za.co.boardaf.model.BoardTransforms
@@ -92,6 +98,8 @@ fun BoardSurface(
     modifier: Modifier = Modifier,
     /** Setting steps that assign no role show the board but must not take taps. */
     holdsEnabled: Boolean = true,
+    /** The setter's own board photo; null renders the bundled one. */
+    photoPath: String? = null,
 ) {
     val assignmentsById = assignments.associateBy { it.holdId }
     var transform by rememberSaveable(mode, stateSaver = BoardTransformSaver) {
@@ -161,10 +169,9 @@ fun BoardSurface(
                         transformOrigin = TransformOrigin(0f, 0f)
                     },
             ) {
-                Image(
-                    painter = painterResource(R.drawable.home_board),
+                BoardBackground(
+                    photoPath = photoPath,
                     contentDescription = "${board.name} photo",
-                    contentScale = ContentScale.FillBounds,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(14.dp)),
@@ -229,6 +236,61 @@ fun BoardSurface(
         }
     }
 }
+
+/**
+ * The setter's own photo of the wall when there is one, otherwise the bundled
+ * board. `FillBounds` is deliberate on both: hold centers are normalized to the
+ * frame, and callers size the frame with [za.co.boardaf.model.ConfiguredBoard.aspectRatio],
+ * so the image fills it without distorting.
+ */
+@Composable
+private fun BoardBackground(
+    photoPath: String?,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    when (val captured = rememberCapturedBoard(photoPath)) {
+        is CapturedBoard.Ready -> Image(
+            bitmap = captured.image,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.FillBounds,
+            modifier = modifier,
+        )
+        // Hold the dark container rather than flashing the bundled wall the
+        // setter has just replaced; the decode is a single frame or two.
+        CapturedBoard.Loading -> Box(modifier)
+        CapturedBoard.None -> Image(
+            painter = painterResource(R.drawable.home_board),
+            contentDescription = contentDescription,
+            contentScale = ContentScale.FillBounds,
+            modifier = modifier,
+        )
+    }
+}
+
+private sealed interface CapturedBoard {
+    /** No photo, or one that could not be decoded: the bundled board applies. */
+    data object None : CapturedBoard
+    data object Loading : CapturedBoard
+    data class Ready(val image: ImageBitmap) : CapturedBoard
+}
+
+@Composable
+private fun rememberCapturedBoard(photoPath: String?): CapturedBoard = produceState<CapturedBoard>(
+    initialValue = if (photoPath == null) CapturedBoard.None else CapturedBoard.Loading,
+    photoPath,
+) {
+    val path = photoPath
+    value = if (path == null) {
+        CapturedBoard.None
+    } else {
+        // Decoding a multi-megapixel JPEG on the main thread drops frames; the
+        // store already caps captures, so one background decode is enough.
+        withContext(Dispatchers.IO) {
+            runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull()
+        }?.let { CapturedBoard.Ready(it) } ?: CapturedBoard.None
+    }
+}.value
 
 @Composable
 private fun KickboardOverlay(boundaryY: Float, prominent: Boolean) {

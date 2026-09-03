@@ -11,20 +11,40 @@ If they do, build and install with:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Building is a host-machine job
+## Building and verifying
 
-Agents generally **cannot run this build themselves**. Two things block it:
+When the agent shell runs on the Mac itself, it can do the whole loop — verified
+3 Sept 2026:
 
-- The agent shell is a Linux container that mounts only this repository. It has
-  no Android SDK, and the host's macOS SDK and `cmdline-tools` will not run
-  there even if they are mounted.
-- Android Studio can only ever be granted at click-only tier, and in practice it
-  ignores synthetic clicks on both the Run button and the Run menu item.
+- `./gradlew testDebugUnitTest assembleDebug lintDebug` all run (Java 24;
+  `local.properties` present).
+- `adb` is at `~/Library/Android/sdk/platform-tools/adb`, not on `PATH`.
+- `./gradlew connectedDebugAndroidTest` needs a device. If none is attached, boot
+  the one AVD detached and wait for it:
 
-So an agent should assume its changes are **uncompiled** and say so plainly
-rather than implying they were verified. Ask the user to run the commands above,
-or `./gradlew testDebugUnitTest assembleDebug` for the full check. Never claim a
-change builds or passes tests without output proving it.
+```bash
+nohup ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone -no-snapshot-load >/dev/null 2>&1 &
+```
+
+Drive the UI with `adb shell input tap/swipe` and read it back with
+`adb shell uiautomator dump /sdcard/ui.xml` — grepping that dump for
+`text="…" … bounds="…"` locates Compose targets far more reliably than eyeballing
+coordinates off a screenshot. The emulator has a working camera app
+(`com.android.camera2`), so `ACTION_IMAGE_CAPTURE` flows can be walked end to end.
+
+Two things still do not work, and neither is worth retrying:
+
+- **Never drive Android Studio with computer-use.** It can only be granted at
+  click-only tier, and it ignores synthetic clicks on the Run button and the Run
+  menu item alike. `gradlew` plus `adb` sidesteps all of it.
+- A **containerised** agent shell (Linux, repo-only mount) has no Android SDK,
+  and the host's macOS SDK will not run there even if mounted. In that case,
+  assume the changes are **uncompiled** and say so; ask the user to run the
+  commands above.
+
+The rule that matters either way: **never claim a change builds or passes tests
+without output proving it**, and report failures with the output rather than
+around it.
 
 ## Conventions worth preserving
 

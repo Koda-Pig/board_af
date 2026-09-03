@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the board photo directory is shared, and only with the camera app the
+     user picks: nothing else in filesDir is reachable through this provider. -->
+<paths>
+    <files-path
+        name="board_photos"
+        path="board_photos/" />
+</paths>

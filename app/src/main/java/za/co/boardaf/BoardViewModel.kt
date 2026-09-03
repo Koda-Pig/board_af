@@ -10,8 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import za.co.boardaf.data.AndroidBoardPhotoStore
 import za.co.boardaf.data.AndroidSnapshotIO
+import za.co.boardaf.data.BoardPhotoStore
 import za.co.boardaf.data.BoardStore
+import za.co.boardaf.data.DeletedProblem
+import za.co.boardaf.data.DeletedProblems
 import za.co.boardaf.data.LibrarySnapshot
 import za.co.boardaf.data.SnapshotCodec
 import za.co.boardaf.data.StorageIssue
@@ -52,10 +56,19 @@ data class BoardUiState(
     val unreadableRecords: List<UnreadableRecord> = emptyList(),
     /** Tombstones for locally deleted problems, propagated by cloud sync. */
     val deletedProblemIds: Set<String> = emptySet(),
+    /** Deleted problems still inside the recovery window, newest last. */
+    val deletedProblems: List<DeletedProblem> = emptyList(),
+    /** Absolute path of the setter's board photo, or null to render the bundled one. */
+    val boardPhotoPath: String? = null,
     val cloud: CloudSyncState = CloudSyncState(),
 ) {
     val board: ConfiguredBoard
-        get() = ConfiguredBoard.from(setup)
+        // A photo record whose file has gone missing must not keep shaping the
+        // frame: without the path there is nothing to draw but the bundled image,
+        // so the bundled image's aspect ratio is the one that applies.
+        get() = ConfiguredBoard.from(setup).let { configured ->
+            if (boardPhotoPath == null) configured.copy(photo = null) else configured
+        }
 
     val selectedProblem: Problem?
         get() = problems.firstOrNull { it.id == selectedProblemId }
@@ -86,7 +99,12 @@ class BoardViewModel @JvmOverloads constructor(
     application: Application,
     private val store: BoardStore = VersionedBoardStore(AndroidSnapshotIO(application)),
     private val cloudSync: CloudSync? = runCatching { FirestoreCloudSync(application) }.getOrNull(),
+    /** Null when board photos are unavailable on this device; capture is then hidden. */
+    private val photoStore: BoardPhotoStore? = runCatching { AndroidBoardPhotoStore(application) }.getOrNull(),
 ) : AndroidViewModel(application) {
+
+    /** The capture the camera app is writing into right now, if any. */
+    private var pendingPhotoFileName: String? = null
 
     private val mutableState = MutableStateFlow(BoardUiState(isLoading = true))
     val state: StateFlow<BoardUiState> = mutableState.asStateFlow()
@@ -97,6 +115,12 @@ class BoardViewModel @JvmOverloads constructor(
     init {
         viewModelScope.launch {
             val result = store.load()
+            // Recovery payloads expire; the tombstone ids deliberately do not,
+            // since they still have a delete to propagate.
+            val recoverable = DeletedProblems.pruned(
+                result.snapshot.deletedProblems,
+                System.currentTimeMillis(),
+            )
             // Preserve cloud state: startCloudSync() may already have collected READY.
             mutableState.value = mutableState.value.copy(
                 isLoading = false,
@@ -109,8 +133,13 @@ class BoardViewModel @JvmOverloads constructor(
                 storageIssues = result.issues,
                 unreadableRecords = result.snapshot.unreadable,
                 deletedProblemIds = result.snapshot.deletedProblemIds,
-            )
-            cloudSync?.onLocalChanged(result.snapshot)
+                deletedProblems = recoverable,
+            ).withResolvedPhoto()
+            if (recoverable != result.snapshot.deletedProblems) {
+                persist()
+            } else {
+                cloudSync?.onLocalChanged(result.snapshot)
+            }
         }
         startCloudSync()
     }
@@ -136,7 +165,8 @@ class BoardViewModel @JvmOverloads constructor(
                     setterMode = merged.snapshot.setterMode,
                     unreadableRecords = merged.snapshot.unreadable,
                     deletedProblemIds = merged.snapshot.deletedProblemIds,
-                )
+                    deletedProblems = merged.snapshot.deletedProblems,
+                ).withResolvedPhoto()
                 persist()
             }
         }
@@ -231,11 +261,16 @@ class BoardViewModel @JvmOverloads constructor(
                 ?: current.problems.firstOrNull { it.id != problemId }?.id
             else -> current.selectedProblemId
         }
+        val deleted = current.problems.first { it.id == problemId }
         mutableState.value = current.copy(
             problems = current.problems.filterNot { it.id == problemId },
             // Tombstone, so sync propagates the delete instead of re-adopting
             // the record from the server on the next merge.
             deletedProblemIds = current.deletedProblemIds + problemId,
+            // The payload as well, so the delete stays recoverable on this device
+            // for DeletedProblems.RETENTION_MS.
+            deletedProblems = current.deletedProblems +
+                DeletedProblem(deleted, System.currentTimeMillis()),
             selectedProblemId = nextSelected,
             isSetting = if (current.isSetting && current.setter.draft.editingProblemId == problemId) {
                 false
@@ -244,7 +279,49 @@ class BoardViewModel @JvmOverloads constructor(
             },
         )
         persist()
-        emit(BoardEvent.Message("Problem deleted."))
+        emit(
+            BoardEvent.Message(
+                "Deleted ${deleted.name.ifBlank { "Untitled draft" }} — recoverable from Recently deleted.",
+            ),
+        )
+    }
+
+    /**
+     * Put a deleted problem back. Deliberately under a *new* id: SyncPlanner's
+     * rule is that a tombstone on either side wins over any surviving copy, so a
+     * restore that reused the old id would be deleted again by the next merge.
+     * The tombstone therefore stays; only the payload leaves the recovery list.
+     */
+    fun restoreDeletedProblem(problemId: String) {
+        val current = mutableState.value
+        val record = current.deletedProblems.firstOrNull { it.problem.id == problemId } ?: return
+        val id = newProblemId(record.problem.name)
+        // Restored long after the fact, so the state is recomputed rather than
+        // taken at face value: the board may have been reconfigured since.
+        val issues = ProblemValidator.validate(record.problem, current.board)
+        val restored = record.problem.copy(
+            id = id,
+            publicationState = ProblemValidator.resolveState(record.problem.publicationState, issues),
+        )
+        mutableState.value = current.copy(
+            problems = listOf(restored) + current.problems,
+            deletedProblems = current.deletedProblems.filterNot { it.problem.id == problemId },
+        )
+        persist()
+        emit(BoardEvent.Message("${restored.name.ifBlank { "Untitled draft" }} restored."))
+    }
+
+    /**
+     * Give up the ability to recover one deleted problem. The tombstone stays:
+     * dropping it would let the next sync re-adopt the record from the server.
+     */
+    fun forgetDeletedProblem(problemId: String) {
+        val current = mutableState.value
+        if (current.deletedProblems.none { it.problem.id == problemId }) return
+        mutableState.value = current.copy(
+            deletedProblems = current.deletedProblems.filterNot { it.problem.id == problemId },
+        )
+        persist()
     }
 
     /** Publish directly from the library/detail once a problem is valid and forerun. */
@@ -436,6 +513,60 @@ class BoardViewModel @JvmOverloads constructor(
 
     fun confirmBoardSetup() = updateSetup { it.copy(confirmedAt = System.currentTimeMillis()) }
 
+    // --- Board photo ---------------------------------------------------------------
+
+    /**
+     * Hand the camera app somewhere to write. Returns the URI string to launch
+     * with, or null when no destination could be prepared. The result is reported
+     * back through [completeBoardPhotoCapture] — the camera app owns the file
+     * until then, so nothing is adopted here.
+     */
+    fun beginBoardPhotoCapture(): String? {
+        val store = photoStore ?: return null
+        // A previous capture that never reported back left an empty file behind.
+        pendingPhotoFileName?.let(store::delete)
+        pendingPhotoFileName = null
+
+        val fileName = store.createPending() ?: return null
+        val uri = store.shareUri(fileName)
+        if (uri == null) {
+            store.delete(fileName)
+            return null
+        }
+        pendingPhotoFileName = fileName
+        return uri
+    }
+
+    /** Adopt the pending capture, or clean it up when the camera reported failure. */
+    fun completeBoardPhotoCapture(saved: Boolean) {
+        val store = photoStore ?: return
+        val fileName = pendingPhotoFileName ?: return
+        pendingPhotoFileName = null
+
+        if (!saved) {
+            store.delete(fileName)
+            return
+        }
+        val photo = store.adopt(fileName)
+        if (photo == null) {
+            emit(BoardEvent.Message("That photo couldn't be read. The board is unchanged."))
+            return
+        }
+        // Only once the replacement is safely adopted is the old file expendable.
+        val previous = mutableState.value.setup.photo
+        updateSetup { it.copy(photo = photo) }
+        if (previous != null && previous.fileName != photo.fileName) store.delete(previous.fileName)
+        emit(BoardEvent.Message("Board photo updated."))
+    }
+
+    /** Go back to the photo bundled with the app. */
+    fun clearBoardPhoto() {
+        val previous = mutableState.value.setup.photo ?: return
+        updateSetup { it.copy(photo = null) }
+        photoStore?.delete(previous.fileName)
+        emit(BoardEvent.Message("Using the bundled board photo."))
+    }
+
     fun setGradeSystem(gradeSystem: GradeSystem) {
         mutableState.value = mutableState.value.copy(gradeSystem = gradeSystem)
         persist()
@@ -470,7 +601,7 @@ class BoardViewModel @JvmOverloads constructor(
             val resolved = ProblemValidator.resolveState(problem.publicationState, issues)
             if (resolved == problem.publicationState) problem else problem.copy(publicationState = resolved)
         }
-        mutableState.value = current.copy(setup = setup, problems = problems)
+        mutableState.value = current.copy(setup = setup, problems = problems).withResolvedPhoto()
         persist()
     }
 
@@ -516,7 +647,11 @@ class BoardViewModel @JvmOverloads constructor(
         setterMode = setterMode,
         unreadable = unreadableRecords,
         deletedProblemIds = deletedProblemIds,
+        deletedProblems = deletedProblems,
     )
+
+    private fun BoardUiState.withResolvedPhoto(): BoardUiState =
+        copy(boardPhotoPath = setup.photo?.let { photoStore?.pathFor(it) })
 
     private fun emit(event: BoardEvent) {
         mutableEvents.tryEmit(event)

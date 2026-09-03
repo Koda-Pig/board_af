@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
@@ -90,11 +91,17 @@ data class BoardActions(
     val onArchiveProblem: (String) -> Unit = {},
     val onUnarchiveProblem: (String) -> Unit = {},
     val onDeleteProblem: (String) -> Unit = {},
+    val onRestoreDeletedProblem: (String) -> Unit = {},
+    val onForgetDeletedProblem: (String) -> Unit = {},
     val onPublishProblem: (String) -> Unit = {},
     val onSetKickboardEnabled: (Boolean) -> Unit = {},
     val onSetKickboardBoundary: (Float) -> Unit = {},
     val onToggleHoldCapability: (String) -> Unit = {},
     val onConfirmBoardSetup: () -> Unit = {},
+    /** Prepares a capture destination and returns the URI to launch the camera with. */
+    val onBeginBoardPhotoCapture: () -> String? = { null },
+    val onBoardPhotoCaptured: (Boolean) -> Unit = {},
+    val onClearBoardPhoto: () -> Unit = {},
     val onSetGradeSystem: (GradeSystem) -> Unit = {},
     val onCloudSignIn: (String, String) -> Unit = { _, _ -> },
     val onCloudCreateAccount: (String, String) -> Unit = { _, _ -> },
@@ -155,11 +162,16 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onArchiveProblem = viewModel::archiveProblem,
             onUnarchiveProblem = viewModel::unarchiveProblem,
             onDeleteProblem = viewModel::deleteProblem,
+            onRestoreDeletedProblem = viewModel::restoreDeletedProblem,
+            onForgetDeletedProblem = viewModel::forgetDeletedProblem,
             onPublishProblem = viewModel::publishProblem,
             onSetKickboardEnabled = viewModel::setKickboardEnabled,
             onSetKickboardBoundary = viewModel::setKickboardBoundary,
             onToggleHoldCapability = viewModel::toggleHoldCapability,
             onConfirmBoardSetup = viewModel::confirmBoardSetup,
+            onBeginBoardPhotoCapture = viewModel::beginBoardPhotoCapture,
+            onBoardPhotoCaptured = viewModel::completeBoardPhotoCapture,
+            onClearBoardPhoto = viewModel::clearBoardPhoto,
             onSetGradeSystem = viewModel::setGradeSystem,
             onCloudSignIn = viewModel::cloudSignIn,
             onCloudCreateAccount = viewModel::cloudCreateAccount,
@@ -256,7 +268,20 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
-            snackbarHost = { SnackbarHost(snackbarHostState) },
+            snackbarHost = {
+                // On Board the sheet rests BOARD_SHEET_PEEK_HEIGHT above the nav
+                // bar, and the default host would render the snackbar on top of
+                // that peek — hiding the setter's header and the tap-rejection's
+                // own context exactly when it is needed. Lift it clear.
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = if (currentDestination == Destination.BOARD) {
+                        Modifier.padding(bottom = BOARD_SHEET_PEEK_HEIGHT)
+                    } else {
+                        Modifier
+                    },
+                )
+            },
             // No top bar: the board photo gets that vertical space instead.
             bottomBar = {
                 val navBarColors = NavigationBarItemDefaults.colors(

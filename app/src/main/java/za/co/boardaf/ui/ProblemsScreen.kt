@@ -36,6 +36,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,7 +58,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.text.DateFormat
+import java.util.Date
 import za.co.boardaf.BoardUiState
+import za.co.boardaf.data.DeletedProblem
+import za.co.boardaf.data.DeletedProblems
 import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.Problem
@@ -82,7 +87,14 @@ fun ProblemsScreen(
     var angleFilter by rememberSaveable { mutableStateOf(ALL) }
     var feetFilter by rememberSaveable { mutableStateOf(ALL) }
     var setterFilter by rememberSaveable { mutableStateOf(ALL) }
+    var deletedOpen by rememberSaveable { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+
+    // Deleted problems are a separate list, so only the text query applies —
+    // status, grade and the rest describe the live library.
+    val deleted = state.deletedProblems
+        .filter { problemDisplayName(it.problem.name).contains(query, ignoreCase = true) }
+        .sortedByDescending { it.deletedAt }
 
     val setters = state.problems.map { it.setter }.filter { it.isNotBlank() }.distinct().sorted()
     // The angle filter only earns its row once the library actually spans inclines.
@@ -202,6 +214,39 @@ fun ProblemsScreen(
                 )
             }
         }
+
+        if (deleted.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "RECENTLY DELETED",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "Recoverable on this device for ${DeletedProblems.RETENTION_MS.inDays()} days.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { deletedOpen = !deletedOpen }) {
+                        Text(if (deletedOpen) "Hide" else "Show ${deleted.size}")
+                    }
+                }
+            }
+            if (deletedOpen) {
+                items(deleted, key = { "deleted-${it.problem.id}" }) { record ->
+                    DeletedProblemRow(record = record, state = state, actions = actions)
+                }
+            }
+        }
     }
 
     // Filters live on a bottom sheet: chips wrap instead of clipping in nested
@@ -280,6 +325,81 @@ fun ProblemsScreen(
                 }
             }
         }
+    }
+}
+
+private fun Long.inDays(): Long = this / (24L * 60 * 60 * 1000)
+
+/**
+ * One recoverable delete. Restoring is the safe action and gets the button;
+ * "Remove" is the only genuinely irreversible one here, so it confirms first.
+ */
+@Composable
+private fun DeletedProblemRow(
+    record: DeletedProblem,
+    state: BoardUiState,
+    actions: BoardActions,
+) {
+    var confirmForget by rememberSaveable { mutableStateOf(false) }
+    val displayName = problemDisplayName(record.problem.name)
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    displayName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "est. ${record.problem.grade.label(state.gradeSystem)} · " +
+                        "${holdCountLabel(record.problem.assignments.size)} · deleted " +
+                        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(record.deletedAt)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TextButton(onClick = { actions.onRestoreDeletedProblem(record.problem.id) }) {
+                Text("Restore")
+            }
+            TextButton(onClick = { confirmForget = true }) { Text("Remove") }
+        }
+    }
+
+    if (confirmForget) {
+        AlertDialog(
+            onDismissRequest = { confirmForget = false },
+            title = { Text("Remove permanently?") },
+            text = {
+                Text(
+                    "“$displayName” will stop being recoverable on this device. " +
+                        "The deletion itself is unaffected.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmForget = false
+                        actions.onForgetDeletedProblem(record.problem.id)
+                    },
+                ) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmForget = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -415,7 +535,10 @@ private fun ProblemCard(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete problem?") },
             text = {
-                Text("“$displayName” will be permanently removed. This cannot be undone.")
+                Text(
+                    "“$displayName” leaves the library. You can put it back from " +
+                        "Recently deleted for ${DeletedProblems.RETENTION_MS.inDays()} days.",
+                )
             },
             confirmButton = {
                 TextButton(
