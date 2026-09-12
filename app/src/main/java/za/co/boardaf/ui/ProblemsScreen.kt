@@ -24,10 +24,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -82,6 +84,8 @@ fun ProblemsScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    var sortOpen by rememberSaveable { mutableStateOf(false) }
+    var sort by rememberSaveable { mutableStateOf(ProblemSort.DEFAULT) }
     var statusFilter by rememberSaveable { mutableStateOf(ACTIVE) }
     var gradeFilter by rememberSaveable(state.gradeSystem) { mutableStateOf(ALL) }
     var angleFilter by rememberSaveable { mutableStateOf(ALL) }
@@ -102,7 +106,7 @@ fun ProblemsScreen(
 
     val statusOptions = listOf(ACTIVE, ALL) + PublicationState.entries.map { it.label }
 
-    val visibleProblems = state.problems.filter { problem ->
+    val matching = state.problems.filter { problem ->
         val statusOk = when (statusFilter) {
             ACTIVE -> problem.publicationState != PublicationState.ARCHIVED
             ALL -> true
@@ -115,6 +119,7 @@ fun ProblemsScreen(
             (setterFilter == ALL || problem.setter == setterFilter) &&
             problemDisplayName(problem.name).contains(query, ignoreCase = true)
     }
+    val visibleProblems = sortProblems(matching, sort)
 
     val filtering = statusFilter != ACTIVE ||
         gradeFilter != ALL ||
@@ -174,10 +179,37 @@ fun ProblemsScreen(
             )
         }
         item {
-            TextButton(onClick = { filtersOpen = true }) {
-                Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Filters")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { filtersOpen = true }) {
+                    Icon(Icons.Rounded.FilterList, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Filters")
+                }
+                Box {
+                    // The button doubles as the readout, so the current ordering is
+                    // visible without opening anything.
+                    TextButton(onClick = { sortOpen = true }) {
+                        Icon(Icons.Rounded.SwapVert, contentDescription = "Sort", modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(sort.label)
+                    }
+                    DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                        ProblemSort.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                onClick = {
+                                    sort = option
+                                    sortOpen = false
+                                },
+                                trailingIcon = {
+                                    if (option == sort) {
+                                        Icon(Icons.Rounded.Check, contentDescription = "Selected")
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
         if (activeFilterChips.isNotEmpty()) {
