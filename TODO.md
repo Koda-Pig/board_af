@@ -9,7 +9,7 @@ follows is only what is still open. Context: `UX_REVIEW.md`,
 Tablet, iPad, and any wider (≥ 840 dp) viewport work is out of scope — discard
 and ignore it. Do not design, polish, or re-check those branches.
 
-Baseline as of this pass: 181 unit tests and 16 instrumented tests pass
+Baseline as of this pass: 243 unit tests and 16 instrumented tests pass
 (`./gradlew testDebugUnitTest connectedDebugAndroidTest`), and `lintDebug` is
 clean apart from a pre-existing Gradle-version notice.
 
@@ -22,15 +22,31 @@ clean apart from a pre-existing Gradle-version notice.
 - [ ] Existing problems still say "You". A one-time migration mapping "You" → the
       signed-in account is still the obvious fix, but only once sync is live.
 
-### Hold re-mapping after a new board photo
+### Hold detection after a new board photo
 
-- [ ] Board photos can now be re-shot in-app, but hold positions are *not*
-      re-detected, so a photo taken from a different spot leaves every marker off
-      its hold. Setup's Board photo card warns about this and sits directly under
-      the board preview, where the hold rings make the misalignment visible —
-      which makes the gap survivable, not fixed. Letting the setter drag hold
-      centers against a fresh photo is the missing piece. (AI hold detection
-      stays out of scope, §2.)
+- [ ] Setup's Hold map card drags, adds and removes hold centers, and **Suggest
+      from photo** proposes a whole map from the board photo with no model and no
+      network (`HoldDetector`). Measured on two photos of the wall, re-set between
+      them (`HoldDetectorTest`): 40 of 43 mapped holds on the bundled one, and all
+      26 spot-checked holds on the re-set one, offering ~59 suggestions for its
+      ~60 holds. It is a starting point, not an answer, and it is reviewed before
+      it lands.
+      What is still open:
+      - **A hold bolted across a panel's outer edge, overhanging it**, is missed:
+        its blob merges with the room behind the board and is dropped. Four of
+        these on the re-set wall. Growing the board region to cover them was tried
+        and made things worse — the bright rim merges into the same blob.
+      - **Bolt washers on bare t-nuts** are suggested along with the holds: they
+        are the right size and roundness, and nothing distinguishes them yet.
+        A handful per wall, removed with one tap each.
+      - **Two holds of the same colour touching** read as one blob. Watershed on
+        the distance transform would split them; nothing does today.
+      - **A hold the detector can't see** has to be added by hand. It is deliberately
+        never removed on its behalf (`BoardSetup.withSuggestedHolds`).
+      - **A re-shoot from a different spot** is still repaired marker by marker.
+        A four-corner alignment warping the whole map onto the new frame in one
+        go would be a better fit for that than re-detecting.
+      (AI hold detection stays out of scope, §2 — the above is all deterministic.)
 
 ### `FirestoreCloudSync` tombstone writes are untested
 

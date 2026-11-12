@@ -65,4 +65,24 @@ object BoardTransforms {
             y = base.y * transform.scale + transform.offsetY,
         )
     }
+
+    /**
+     * Inverse of [anchor]: the normalized board point under a screen position.
+     * Dragging a hold happens in container pixels while the stored coordinate is
+     * normalized, so the zoom and pan in force have to be divided back out before
+     * anything is written down. Clamped to the frame, since a drag can leave it.
+     */
+    fun normalize(
+        position: PixelPoint,
+        containerSize: PixelSize,
+        transform: BoardTransform,
+    ): NormalizedPoint {
+        val scale = transform.scale.takeIf { it != 0f } ?: 1f
+        val x = (position.x - transform.offsetX) / scale
+        val y = (position.y - transform.offsetY) / scale
+        return NormalizedPoint(
+            x = if (containerSize.width > 0f) (x / containerSize.width).coerceIn(0f, 1f) else 0f,
+            y = if (containerSize.height > 0f) (y / containerSize.height).coerceIn(0f, 1f) else 0f,
+        )
+    }
 }

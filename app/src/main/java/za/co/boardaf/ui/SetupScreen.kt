@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -71,6 +72,11 @@ fun SetupScreen(
     val mainCount = board.holds.count { it.zone == BoardZoneType.MAIN }
     val kickerCount = board.holds.count { it.zone == BoardZoneType.KICKBOARD }
     var setupHintDismissed by rememberSaveable { mutableStateOf(false) }
+    // Re-mapping is a distinct mode on the same board preview: in it a tap selects
+    // a hold instead of correcting its capability, so one gesture never means two
+    // things while markers are being lined up.
+    var remapping by rememberSaveable { mutableStateOf(false) }
+    var selectedHoldId by rememberSaveable { mutableStateOf<String?>(null) }
     var boundaryDraft by remember(board.kickboardTopY) {
         mutableFloatStateOf(board.kickboardTopY)
     }
@@ -162,9 +168,17 @@ fun SetupScreen(
             BoardSurface(
                 board = board,
                 assignments = emptyList(),
-                mode = BoardDisplayMode.CONFIGURE,
-                onHoldClick = actions.onToggleHoldCapability,
+                mode = if (remapping) BoardDisplayMode.REMAP else BoardDisplayMode.CONFIGURE,
+                onHoldClick = { holdId ->
+                    if (remapping) {
+                        selectedHoldId = holdId.takeIf { it != selectedHoldId }
+                    } else {
+                        actions.onToggleHoldCapability(holdId)
+                    }
+                },
                 photoPath = state.boardPhotoPath,
+                selectedHoldId = selectedHoldId.takeIf { remapping },
+                onHoldDragged = actions.onMoveHold,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(board.aspectRatio),
@@ -190,6 +204,40 @@ fun SetupScreen(
 
         item {
             BoardPhotoCard(photo = board.photo, actions = actions)
+        }
+
+        item {
+            HoldMapCard(
+                board = board,
+                setup = state.setup,
+                remapping = remapping,
+                selectedHoldId = selectedHoldId,
+                suggesting = state.isSuggestingHolds,
+                onSuggestHolds = actions.onSuggestHolds,
+                onToggleRemapping = {
+                    remapping = !remapping
+                    selectedHoldId = null
+                },
+                onAddHold = { selectedHoldId = actions.onAddHold(0.5f, 0.5f) },
+                onRemoveSelected = { holdId ->
+                    val demoted = demotedBy(state.setup.withHoldRemoved(holdId))
+                    if (demoted.isEmpty()) {
+                        actions.onRemoveHold(holdId)
+                        selectedHoldId = null
+                    } else {
+                        pendingChange = PendingSetupChange.HoldRemoval(holdId, demoted)
+                    }
+                },
+                onUseBundled = {
+                    val demoted = demotedBy(state.setup.withBundledHolds())
+                    if (demoted.isEmpty()) {
+                        actions.onUseBundledHoldLayout()
+                        selectedHoldId = null
+                    } else {
+                        pendingChange = PendingSetupChange.BundledLayout(demoted)
+                    }
+                },
+            )
         }
 
         item {
@@ -324,6 +372,58 @@ fun SetupScreen(
         }
     }
 
+    state.holdSuggestion?.let { suggestion ->
+        AlertDialog(
+            onDismissRequest = actions.onDismissHoldSuggestion,
+            title = { Text("Use these suggestions?") },
+            text = {
+                Text(
+                    buildString {
+                        append(
+                            if (suggestion.snapped == 1) {
+                                "1 marker would move onto a hold found in the photo"
+                            } else {
+                                "${suggestion.snapped} markers would move onto holds found in the photo"
+                            },
+                        )
+                        if (suggestion.added > 0) {
+                            append(
+                                if (suggestion.added == 1) {
+                                    ", and 1 hold the map doesn't have yet would be added"
+                                } else {
+                                    ", and ${suggestion.added} holds the map doesn't have yet would be added"
+                                },
+                            )
+                        }
+                        append(". ")
+                        if (suggestion.unmatched > 0) {
+                            append(
+                                if (suggestion.unmatched == 1) {
+                                    "1 marker had nothing to snap to and stays where it is. "
+                                } else {
+                                    "${suggestion.unmatched} markers had nothing to snap to and stay where they are. "
+                                },
+                            )
+                        }
+                        append("Check the board above afterwards and drag anything that landed wrong.")
+                        if (suggestion.demoted.isNotEmpty()) {
+                            val listed = suggestion.demoted.take(3).joinToString(", ") { "“$it”" }
+                            val extra = (suggestion.demoted.size - 3).takeIf { it > 0 }
+                                ?.let { " and $it more" }.orEmpty()
+                            append("\n\n$listed$extra will move to Needs review because this breaks their holds.")
+                        }
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = actions.onAcceptHoldSuggestion) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = actions.onDismissHoldSuggestion) { Text("Cancel") }
+            },
+        )
+    }
+
     pendingChange?.let { change ->
         val count = change.demoted.size
         val listed = change.demoted.take(3).joinToString(", ") { "“$it”" }
@@ -351,6 +451,14 @@ fun SetupScreen(
                         when (change) {
                             is PendingSetupChange.Boundary -> actions.onSetKickboardBoundary(change.y)
                             is PendingSetupChange.Kickboard -> actions.onSetKickboardEnabled(change.enabled)
+                            is PendingSetupChange.HoldRemoval -> {
+                                actions.onRemoveHold(change.holdId)
+                                selectedHoldId = null
+                            }
+                            is PendingSetupChange.BundledLayout -> {
+                                actions.onUseBundledHoldLayout()
+                                selectedHoldId = null
+                            }
                         }
                         pendingChange = null
                     },
@@ -407,8 +515,8 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
         Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(10.dp)) {
             Text(
                 "Hold positions are not re-detected. Shoot the whole wall square-on, " +
-                    "from where the bundled photo was taken, then check the markers " +
-                    "above still sit on their holds.",
+                    "then check the markers above still sit on their holds — Hold map " +
+                    "below is where you drag back any that have drifted.",
                 modifier = Modifier.padding(12.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -444,12 +552,124 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
     }
 }
 
+/**
+ * Re-map holds against the photo on screen. Hold centers are stored as positions
+ * in the frame and nothing re-detects them, so this is how markers get back onto
+ * their holds after the wall is re-shot or the holds themselves are moved.
+ *
+ * A drag commits as soon as the finger lifts, with no confirmation: dragging is
+ * continuous and a dialog per hold would make the job unusable, and a demotion to
+ * Needs review is reversible anyway. Removing a hold does ask first, because the
+ * problems that used it lose a hold outright.
+ */
+@Composable
+private fun HoldMapCard(
+    board: ConfiguredBoard,
+    setup: BoardSetup,
+    remapping: Boolean,
+    selectedHoldId: String?,
+    suggesting: Boolean,
+    onSuggestHolds: () -> Unit,
+    onToggleRemapping: () -> Unit,
+    onAddHold: () -> Unit,
+    onRemoveSelected: (String) -> Unit,
+    onUseBundled: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Hold map", fontWeight = FontWeight.Bold)
+        Text(
+            text = "${board.holds.size} holds · " + if (setup.hasCustomLayout) {
+                "your own map"
+            } else {
+                "the map bundled with the app"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (remapping) {
+            Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(10.dp)) {
+                Text(
+                    "Drag each marker onto the middle of its hold. Pinch the board to " +
+                        "zoom in first, and double-tap it to zoom back out. Tap a marker " +
+                        "to select it, then remove it if that hold has come off the wall.",
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            selectedHoldId?.let { holdId ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Selected $holdId",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    TextButton(onClick = { onRemoveSelected(holdId) }) {
+                        Text("Remove $holdId", color = Coral)
+                    }
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(onClick = onSuggestHolds, enabled = !suggesting) {
+                    if (suggesting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Searching…")
+                    } else {
+                        Text("Suggest from photo")
+                    }
+                }
+                Button(onClick = onAddHold) { Text("Add hold") }
+                TextButton(onClick = onToggleRemapping) { Text("Done") }
+            }
+            Text(
+                "Suggest from photo finds likely holds and snaps the markers onto them; " +
+                    "you confirm before anything moves. A hold added by hand lands in the " +
+                    "middle of the board, already selected.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(
+                "Markers are stored as positions in the photo, not found in it. Re-map " +
+                    "after re-shooting the wall, or whenever you move holds around.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onToggleRemapping) { Text("Re-map holds") }
+                if (setup.hasCustomLayout) {
+                    TextButton(onClick = onUseBundled) { Text("Use bundled map") }
+                }
+            }
+        }
+    }
+}
+
 /** A Setup edit awaiting confirmation because it would demote published problems. */
 private sealed interface PendingSetupChange {
     val demoted: List<String>
 
     data class Boundary(val y: Float, override val demoted: List<String>) : PendingSetupChange
     data class Kickboard(val enabled: Boolean, override val demoted: List<String>) : PendingSetupChange
+    data class HoldRemoval(val holdId: String, override val demoted: List<String>) : PendingSetupChange
+    data class BundledLayout(override val demoted: List<String>) : PendingSetupChange
 }
 
 @Composable

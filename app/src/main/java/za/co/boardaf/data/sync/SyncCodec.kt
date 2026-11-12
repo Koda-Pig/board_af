@@ -29,7 +29,10 @@ object SyncCodec {
     fun encodeBoard(setup: BoardSetup, gradeSystem: GradeSystem, setterMode: SetterMode): String =
         buildJsonObject {
             // Photo excluded: the file is device-local, so syncing its metadata
-            // would point other devices at an image they cannot read.
+            // would point other devices at an image they cannot read. The hold
+            // layout is NOT excluded — problems reference holds by id, so devices
+            // that disagree about which holds exist would demote each other's
+            // published problems on the next merge.
             put("board", SnapshotCodec.encodeSetup(setup, includePhoto = false))
             put(
                 "settings",

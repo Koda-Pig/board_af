@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import za.co.boardaf.model.Accent
+import za.co.boardaf.model.BoardDefaults
 import za.co.boardaf.model.BoardPhoto
 import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.BoardZoneType
@@ -24,6 +25,8 @@ import za.co.boardaf.model.FinishRule
 import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.HoldCapability
 import za.co.boardaf.model.HoldClassification
+import za.co.boardaf.model.HoldDefinition
+import za.co.boardaf.model.NormalizedPoint
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemAssignment
@@ -225,6 +228,27 @@ object SnapshotCodec {
                 },
             ),
         )
+        // Written only once the setter has re-mapped holds. Absent means "track
+        // the bundled map", which is not the same as a copy of it. Unlike the
+        // photo this is included for the cloud document too: hold ids are what
+        // problems reference, so the devices have to agree on which holds exist.
+        val layout = setup.layout
+        if (layout != null) {
+            put(
+                "layout",
+                JsonArray(
+                    layout.map { hold ->
+                        buildJsonObject {
+                            put("id", hold.id)
+                            put("x", hold.point.x.toDouble())
+                            put("y", hold.point.y.toDouble())
+                        }
+                    },
+                ),
+            )
+        }
+        val nextHoldNumber = setup.nextHoldNumber
+        if (nextHoldNumber != null) put("nextHoldNumber", nextHoldNumber)
     }
 
     fun decodeSetup(json: JsonObject): BoardSetup {
@@ -247,8 +271,39 @@ object SnapshotCodec {
             // photo. A malformed record falls back to it rather than failing the
             // whole setup, which would cost the hold classifications too.
             photo = (json["photo"] as? JsonObject)?.let { runCatching { decodePhoto(it) }.getOrNull() },
+            // Additive since hold re-mapping landed; absent means the bundled map.
+            layout = decodeLayout(json),
+            nextHoldNumber = json["nextHoldNumber"]?.jsonPrimitive?.longOrNull?.toInt(),
         )
     }
+
+    /**
+     * A hold record that won't parse is skipped rather than failing the setup: the
+     * remaining holds still place every problem that doesn't use the lost one, and
+     * problems that do use it surface as Needs review through the normal unknown-hold
+     * check. A layout that reads as empty is treated as absent — a board with no
+     * holds at all is never what the setter meant.
+     */
+    private fun decodeLayout(json: JsonObject): List<HoldDefinition>? =
+        (json["layout"] as? JsonArray)
+            ?.mapNotNull { element ->
+                runCatching {
+                    val hold = element.jsonObject
+                    HoldDefinition(
+                        id = hold.require("id").jsonPrimitive.content,
+                        point = NormalizedPoint(
+                            x = hold.require("x").jsonPrimitive.doubleOrNull?.toFloat()
+                                ?: error("x is not a number"),
+                            y = hold.require("y").jsonPrimitive.doubleOrNull?.toFloat()
+                                ?: error("y is not a number"),
+                        ),
+                    )
+                }.getOrNull()
+            }
+            ?.takeIf { it.isNotEmpty() }
+            // Keep "tracks the bundled map" as the single representation of itself,
+            // so an encode/decode round trip doesn't quietly pin the board.
+            ?.takeIf { it != BoardDefaults.holds }
 
     private fun decodePhoto(json: JsonObject): BoardPhoto = BoardPhoto(
         fileName = json.require("fileName").jsonPrimitive.content,

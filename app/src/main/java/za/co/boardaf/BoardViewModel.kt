@@ -8,10 +8,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import za.co.boardaf.data.AndroidBoardImageSource
 import za.co.boardaf.data.AndroidBoardPhotoStore
 import za.co.boardaf.data.AndroidSnapshotIO
+import za.co.boardaf.data.BoardImageSource
 import za.co.boardaf.data.BoardPhotoStore
 import za.co.boardaf.data.BoardStore
 import za.co.boardaf.data.DeletedProblem
@@ -31,6 +36,7 @@ import za.co.boardaf.model.ConfiguredBoard
 import za.co.boardaf.model.DraftProblem
 import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.GradeSystem
+import za.co.boardaf.model.NormalizedPoint
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemHoldRole
@@ -43,6 +49,7 @@ import za.co.boardaf.setter.SetterReducer
 import za.co.boardaf.setter.SetterState
 import za.co.boardaf.setter.TapRejection
 import za.co.boardaf.ui.ProblemLibraryQuery
+import za.co.boardaf.vision.HoldDetector
 
 data class BoardUiState(
     val isLoading: Boolean = false,
@@ -66,6 +73,10 @@ data class BoardUiState(
      * state, because the board swipes through exactly this list.
      */
     val library: ProblemLibraryQuery = ProblemLibraryQuery(),
+    /** True while the detector is searching the board photo for holds. */
+    val isSuggestingHolds: Boolean = false,
+    /** A detector result waiting for the setter to accept or discard it. */
+    val holdSuggestion: HoldSuggestionPreview? = null,
     val cloud: CloudSyncState = CloudSyncState(),
 ) {
     val board: ConfiguredBoard
@@ -89,6 +100,20 @@ data class BoardUiState(
         get() = ProblemValidator.validate(setter.draft.toSpec(), board)
 }
 
+/**
+ * A round of hold suggestions waiting on the setter, with the cost of taking it.
+ * Held rather than applied because it rewrites the whole map in one go — the one
+ * edit in Setup big enough to be worth seeing the shape of before it lands.
+ */
+data class HoldSuggestionPreview(
+    val setup: BoardSetup,
+    val snapped: Int,
+    val added: Int,
+    val unmatched: Int,
+    /** Published problems that accepting this would move to Needs review. */
+    val demoted: List<String>,
+)
+
 sealed interface BoardEvent {
     data class TapRejected(val rejection: TapRejection) : BoardEvent
     data class Message(
@@ -111,6 +136,10 @@ class BoardViewModel @JvmOverloads constructor(
     private val cloudSync: CloudSync? = runCatching { FirestoreCloudSync(application) }.getOrNull(),
     /** Null when board photos are unavailable on this device; capture is then hidden. */
     private val photoStore: BoardPhotoStore? = runCatching { AndroidBoardPhotoStore(application) }.getOrNull(),
+    /** Null when the board image can't be read; hold suggestions are then hidden. */
+    private val imageSource: BoardImageSource? = runCatching { AndroidBoardImageSource(application) }.getOrNull(),
+    /** Injected so tests can run the search without a background thread. */
+    private val detectorDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : AndroidViewModel(application) {
 
     /** The capture the camera app is writing into right now, if any. */
@@ -529,14 +558,157 @@ class BoardViewModel @JvmOverloads constructor(
 
     // --- Board setup -------------------------------------------------------------
 
-    fun setKickboardEnabled(enabled: Boolean) = updateSetup { it.withKickboardEnabled(enabled) }
+    fun setKickboardEnabled(enabled: Boolean) {
+        updateSetup { it.withKickboardEnabled(enabled) }
+    }
 
     /** Commit kickboard boundary once (not on every drag frame). */
-    fun setKickboardBoundary(y: Float) = updateSetup { it.withBoundary(y) }
+    fun setKickboardBoundary(y: Float) {
+        updateSetup { it.withBoundary(y) }
+    }
 
-    fun toggleHoldCapability(holdId: String) = updateSetup { it.withCapabilityToggled(holdId) }
+    fun toggleHoldCapability(holdId: String) {
+        updateSetup { it.withCapabilityToggled(holdId) }
+    }
 
-    fun confirmBoardSetup() = updateSetup { it.copy(confirmedAt = System.currentTimeMillis()) }
+    fun confirmBoardSetup() {
+        updateSetup { it.copy(confirmedAt = System.currentTimeMillis()) }
+    }
+
+    // --- Hold map ------------------------------------------------------------------
+
+    /**
+     * Commit a dragged hold. Called once when the drag ends rather than per frame:
+     * every setup change re-validates the whole library and writes a snapshot.
+     *
+     * A move is deliberately not gated behind a confirmation the way the kickboard
+     * boundary is — dragging is continuous and a dialog per hold would be unusable.
+     * The snackbar reports any demotion instead, and Needs review is reversible.
+     */
+    fun moveHold(holdId: String, x: Float, y: Float) {
+        val demoted = updateSetup { it.withHoldMoved(holdId, NormalizedPoint(x, y)) }
+        if (demoted > 0) emit(BoardEvent.Message(demotionSentence(demoted)))
+    }
+
+    /** Add a hold at a normalized point; returns the id it was given. */
+    fun addHold(x: Float, y: Float): String? {
+        // Adding a hold can never invalidate an existing problem, so no demotion
+        // check here. New holds land last in the list.
+        updateSetup { it.withHoldAdded(NormalizedPoint(x, y)) }
+        return mutableState.value.setup.holds.lastOrNull()?.id
+    }
+
+    fun removeHold(holdId: String) {
+        if (mutableState.value.setup.holds.none { it.id == holdId }) return
+        val demoted = updateSetup { it.withHoldRemoved(holdId) }
+        emit(
+            BoardEvent.Message(
+                if (demoted > 0) "$holdId removed. ${demotionSentence(demoted)}" else "$holdId removed.",
+            ),
+        )
+    }
+
+    /** Discard the setter's hold map and track the one bundled with the app again. */
+    fun useBundledHoldLayout() {
+        if (!mutableState.value.setup.hasCustomLayout) return
+        val demoted = updateSetup { it.withBundledHolds() }
+        emit(
+            BoardEvent.Message(
+                if (demoted > 0) {
+                    "Using the bundled hold map. ${demotionSentence(demoted)}"
+                } else {
+                    "Using the bundled hold map."
+                },
+            ),
+        )
+    }
+
+    // --- Hold suggestions ------------------------------------------------------------
+
+    /**
+     * Search the board photo and hold the result for the setter to accept.
+     *
+     * Nothing is applied here. A suggestion round moves every marker it matches
+     * at once, which is the largest single edit in Setup, so it is shown as a
+     * summary first — with the published problems it would demote — rather than
+     * landing and leaving the setter to work out what changed.
+     */
+    fun suggestHoldsFromPhoto() {
+        val current = mutableState.value
+        if (current.isSuggestingHolds) return
+        val source = imageSource
+        if (source == null) {
+            emit(BoardEvent.Message("Hold suggestions aren't available on this device."))
+            return
+        }
+        val photoPath = current.boardPhotoPath
+        val setup = current.setup
+        val aspectRatio = current.board.aspectRatio
+        mutableState.value = current.copy(isSuggestingHolds = true)
+
+        viewModelScope.launch {
+            val detected = withContext(detectorDispatcher) {
+                runCatching { source.load(photoPath)?.let { HoldDetector.detect(it) } }.getOrNull()
+            }
+            val latest = mutableState.value.copy(isSuggestingHolds = false)
+            // The map may have been edited while the search ran; a suggestion built
+            // against the old one would undo those edits on accept.
+            if (latest.setup != setup) {
+                mutableState.value = latest
+                emit(BoardEvent.Message("The hold map changed while the photo was being read. Try again."))
+                return@launch
+            }
+            if (detected == null) {
+                mutableState.value = latest
+                emit(BoardEvent.Message("The board photo couldn't be read."))
+                return@launch
+            }
+            val suggestion = setup.withSuggestedHolds(detected, aspectRatio)
+            if (!suggestion.changesAnything) {
+                mutableState.value = latest
+                emit(BoardEvent.Message("Nothing in the photo stood out as a hold."))
+                return@launch
+            }
+            val proposed = ConfiguredBoard.from(suggestion.setup)
+            val demoted = latest.problems
+                .filter { it.publicationState == PublicationState.PUBLISHED }
+                .filter { ProblemValidator.hasErrors(ProblemValidator.validate(it, proposed)) }
+                .map { it.name.ifBlank { "Untitled" } }
+            mutableState.value = latest.copy(
+                holdSuggestion = HoldSuggestionPreview(
+                    setup = suggestion.setup,
+                    snapped = suggestion.snapped,
+                    added = suggestion.added,
+                    unmatched = suggestion.unmatched,
+                    demoted = demoted,
+                ),
+            )
+        }
+    }
+
+    fun acceptHoldSuggestion() {
+        val pending = mutableState.value.holdSuggestion ?: return
+        mutableState.value = mutableState.value.copy(holdSuggestion = null)
+        val demoted = updateSetup { pending.setup }
+        val summary = buildString {
+            append("${pending.snapped} marker(s) snapped")
+            if (pending.added > 0) append(", ${pending.added} added")
+            append(".")
+            if (demoted > 0) append(" ${demotionSentence(demoted)}")
+        }
+        emit(BoardEvent.Message(summary))
+    }
+
+    fun dismissHoldSuggestion() {
+        mutableState.value = mutableState.value.copy(holdSuggestion = null)
+    }
+
+    private fun demotionSentence(count: Int): String =
+        if (count == 1) {
+            "1 problem moved to Needs review."
+        } else {
+            "$count problems moved to Needs review."
+        }
 
     // --- Board photo ---------------------------------------------------------------
 
@@ -624,17 +796,29 @@ class BoardViewModel @JvmOverloads constructor(
         persist()
     }
 
-    private fun updateSetup(transform: (BoardSetup) -> BoardSetup) {
+    /** Applies a setup change and returns how many published problems it demoted. */
+    private fun updateSetup(transform: (BoardSetup) -> BoardSetup): Int {
         val current = mutableState.value
         val setup = transform(current.setup)
         val board = ConfiguredBoard.from(setup)
+        var demoted = 0
         val problems = current.problems.map { problem ->
             val issues = ProblemValidator.validate(problem, board)
             val resolved = ProblemValidator.resolveState(problem.publicationState, issues)
-            if (resolved == problem.publicationState) problem else problem.copy(publicationState = resolved)
+            if (resolved == problem.publicationState) {
+                problem
+            } else {
+                if (problem.publicationState == PublicationState.PUBLISHED &&
+                    resolved == PublicationState.NEEDS_REVIEW
+                ) {
+                    demoted++
+                }
+                problem.copy(publicationState = resolved)
+            }
         }
         mutableState.value = current.copy(setup = setup, problems = problems).withResolvedPhoto()
         persist()
+        return demoted
     }
 
     /**

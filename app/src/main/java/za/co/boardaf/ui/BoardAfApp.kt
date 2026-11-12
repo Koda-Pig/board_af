@@ -99,6 +99,16 @@ data class BoardActions(
     val onSetKickboardBoundary: (Float) -> Unit = {},
     val onToggleHoldCapability: (String) -> Unit = {},
     val onConfirmBoardSetup: () -> Unit = {},
+    /** Commit a dragged hold's new center, in normalized board coordinates. */
+    val onMoveHold: (String, Float, Float) -> Unit = { _, _, _ -> },
+    /** Add a hold; returns the id it was given so the editor can select it. */
+    val onAddHold: (Float, Float) -> String? = { _, _ -> null },
+    val onRemoveHold: (String) -> Unit = {},
+    val onUseBundledHoldLayout: () -> Unit = {},
+    /** Search the board photo for holds and hold the result for review. */
+    val onSuggestHolds: () -> Unit = {},
+    val onAcceptHoldSuggestion: () -> Unit = {},
+    val onDismissHoldSuggestion: () -> Unit = {},
     /** Prepares a capture destination and returns the URI to launch the camera with. */
     val onBeginBoardPhotoCapture: () -> String? = { null },
     val onBoardPhotoCaptured: (Boolean) -> Unit = {},
@@ -171,6 +181,13 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onSetKickboardBoundary = viewModel::setKickboardBoundary,
             onToggleHoldCapability = viewModel::toggleHoldCapability,
             onConfirmBoardSetup = viewModel::confirmBoardSetup,
+            onMoveHold = viewModel::moveHold,
+            onAddHold = viewModel::addHold,
+            onRemoveHold = viewModel::removeHold,
+            onUseBundledHoldLayout = viewModel::useBundledHoldLayout,
+            onSuggestHolds = viewModel::suggestHoldsFromPhoto,
+            onAcceptHoldSuggestion = viewModel::acceptHoldSuggestion,
+            onDismissHoldSuggestion = viewModel::dismissHoldSuggestion,
             onBeginBoardPhotoCapture = viewModel::beginBoardPhotoCapture,
             onBoardPhotoCaptured = viewModel::completeBoardPhotoCapture,
             onClearBoardPhoto = viewModel::clearBoardPhoto,

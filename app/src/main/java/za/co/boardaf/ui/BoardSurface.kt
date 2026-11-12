@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,8 +28,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -87,6 +91,13 @@ enum class BoardDisplayMode {
 
     /** Setup: holds display zone/capability and taps correct classification. */
     CONFIGURE,
+
+    /**
+     * Setup, re-mapping: every hold is draggable onto where it actually is in the
+     * photo. Taps select rather than classify, so one gesture never means two
+     * things while the setter is lining markers up.
+     */
+    REMAP,
 }
 
 @Composable
@@ -100,6 +111,10 @@ fun BoardSurface(
     holdsEnabled: Boolean = true,
     /** The setter's own board photo; null renders the bundled one. */
     photoPath: String? = null,
+    /** Highlighted in [BoardDisplayMode.REMAP] so Setup can act on one hold. */
+    selectedHoldId: String? = null,
+    /** Fired once per completed drag with the hold's new normalized center. */
+    onHoldDragged: (String, Float, Float) -> Unit = { _, _, _ -> },
 ) {
     val assignmentsById = assignments.associateBy { it.holdId }
     var transform by rememberSaveable(mode, stateSaver = BoardTransformSaver) {
@@ -185,33 +200,76 @@ fun BoardSurface(
             }
 
             board.holds.forEach { hold ->
-                val assignment = assignmentsById[hold.id]
-                val visible = when (mode) {
-                    BoardDisplayMode.VIEW -> assignment != null
-                    // Locked setting steps read as review: show the line, not the
-                    // pick-me hints on holds that can't be tapped right now.
-                    BoardDisplayMode.SET -> holdsEnabled || assignment != null
-                    BoardDisplayMode.CONFIGURE -> true
-                }
-                if (visible) {
-                    val anchor = BoardTransforms.anchor(hold.point, containerSize, transform)
-                    val onScreen = anchor.x > -touchTargetPx && anchor.y > -touchTargetPx &&
-                        anchor.x < containerSize.width + touchTargetPx &&
-                        anchor.y < containerSize.height + touchTargetPx
-                    if (onScreen) {
-                        HoldTarget(
-                            hold = hold,
-                            role = assignment?.role,
-                            mode = mode,
-                            enabled = holdsEnabled,
-                            onClick = { onHoldClick(hold.id) },
-                            modifier = Modifier.offset {
-                                IntOffset(
-                                    (anchor.x - touchTargetPx / 2f).roundToInt(),
-                                    (anchor.y - touchTargetPx / 2f).roundToInt(),
+                // Keyed so the per-hold drag state below belongs to the hold and not
+                // to a list position that shifts when one is added or removed.
+                key(hold.id) {
+                    val assignment = assignmentsById[hold.id]
+                    val visible = when (mode) {
+                        BoardDisplayMode.VIEW -> assignment != null
+                        // Locked setting steps read as review: show the line, not the
+                        // pick-me hints on holds that can't be tapped right now.
+                        BoardDisplayMode.SET -> holdsEnabled || assignment != null
+                        BoardDisplayMode.CONFIGURE, BoardDisplayMode.REMAP -> true
+                    }
+                    if (visible) {
+                        val anchor = BoardTransforms.anchor(hold.point, containerSize, transform)
+                        // A hold in flight follows the finger from local state and is
+                        // committed once, on release: writing every frame would
+                        // re-validate the whole library and save a snapshot per event.
+                        var dragDelta by remember { mutableStateOf(Offset.Zero) }
+                        val liveX = anchor.x + dragDelta.x
+                        val liveY = anchor.y + dragDelta.y
+                        val onScreen = liveX > -touchTargetPx && liveY > -touchTargetPx &&
+                            liveX < containerSize.width + touchTargetPx &&
+                            liveY < containerSize.height + touchTargetPx
+                        if (onScreen) {
+                            // Read through the latest composition: a pinch part-way
+                            // through a drag changes the mapping, and the commit has
+                            // to use the transform in force when the finger lifts.
+                            val commitDrag by rememberUpdatedState<(Offset) -> Unit> { delta ->
+                                val point = BoardTransforms.normalize(
+                                    PixelPoint(anchor.x + delta.x, anchor.y + delta.y),
+                                    containerSize,
+                                    transform,
                                 )
-                            },
-                        )
+                                onHoldDragged(hold.id, point.x, point.y)
+                            }
+                            val dragModifier = if (mode == BoardDisplayMode.REMAP) {
+                                Modifier.pointerInput(hold.id) {
+                                    detectDragGestures(
+                                        onDragStart = { dragDelta = Offset.Zero },
+                                        onDragCancel = { dragDelta = Offset.Zero },
+                                        onDragEnd = {
+                                            commitDrag(dragDelta)
+                                            dragDelta = Offset.Zero
+                                        },
+                                        // Consuming is what keeps the board's own pan
+                                        // and the Setup list's scroll out of the drag.
+                                        onDrag = { change, amount ->
+                                            change.consume()
+                                            dragDelta += amount
+                                        },
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            }
+                            HoldTarget(
+                                hold = hold,
+                                role = assignment?.role,
+                                mode = mode,
+                                enabled = holdsEnabled,
+                                selected = hold.id == selectedHoldId,
+                                onClick = { onHoldClick(hold.id) },
+                                gestureModifier = dragModifier,
+                                modifier = Modifier.offset {
+                                    IntOffset(
+                                        (liveX - touchTargetPx / 2f).roundToInt(),
+                                        (liveY - touchTargetPx / 2f).roundToInt(),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -334,19 +392,30 @@ private fun HoldTarget(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    /**
+     * Applied last so it sits inside [clickable] in the pointer chain: the drag
+     * then sees each event first and, by consuming it, cancels the click.
+     */
+    gestureModifier: Modifier = Modifier,
 ) {
     val assignmentText = role?.let { "assigned ${it.label}" } ?: "unassigned"
     val overridden = hold.capability != hold.zone.defaultCapability
+    val configuring = mode == BoardDisplayMode.CONFIGURE || mode == BoardDisplayMode.REMAP
     val description = buildString {
         append(hold.id)
         append(", ")
         append(hold.zone.label)
         append(", ")
         append(hold.capability.label)
-        if (overridden && mode == BoardDisplayMode.CONFIGURE) append(" (corrected)")
-        if (mode != BoardDisplayMode.CONFIGURE) {
+        if (overridden && configuring) append(" (corrected)")
+        if (!configuring) {
             append(", ")
             append(assignmentText)
+        }
+        if (mode == BoardDisplayMode.REMAP) {
+            append(", draggable")
+            if (selected) append(", selected")
         }
     }
 
@@ -360,9 +429,11 @@ private fun HoldTarget(
         modifier = modifier
             .size(48.dp)
             .semantics { contentDescription = description }
-            .then(if (interactive) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(if (interactive) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(gestureModifier),
     ) {
         when {
+            mode == BoardDisplayMode.REMAP -> RemapDot(selected = selected)
             mode == BoardDisplayMode.CONFIGURE -> CapabilityDot(hold = hold, overridden = overridden)
             role != null -> ProblemMarker(
                 role = role,
@@ -370,6 +441,23 @@ private fun HoldTarget(
             )
             else -> UnassignedHint(capability = hold.capability)
         }
+    }
+}
+
+/**
+ * Re-mapping marker: a ring plus a center pip. The ring alone reads as "near the
+ * hold"; the pip is what you line up with the middle of the actual hold.
+ */
+@Composable
+private fun RemapDot(selected: Boolean) {
+    val color = if (selected) Sky else Color.White.copy(alpha = 0.9f)
+    Canvas(modifier = Modifier.size(if (selected) 34.dp else 26.dp)) {
+        drawCircle(
+            color = color,
+            radius = size.minDimension / 2 - 3.dp.toPx(),
+            style = Stroke(width = if (selected) 3.dp.toPx() else 2.dp.toPx()),
+        )
+        drawCircle(color = color, radius = 2.dp.toPx())
     }
 }
 

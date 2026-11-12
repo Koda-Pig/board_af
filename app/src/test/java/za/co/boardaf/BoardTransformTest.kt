@@ -118,4 +118,44 @@ class BoardTransformTest {
         assertEquals(0.25f * 400f * 2f - 120f, anchor.x, 0.0001f)
         assertEquals(0.75f * 600f * 2f - 260f, anchor.y, 0.0001f)
     }
+
+    @Test
+    fun `normalize undoes anchor at every zoom and pan`() {
+        // Dragging a hold reads screen pixels and writes a normalized point, so
+        // the two directions have to agree or a hold would creep on every drag.
+        var transform = BoardTransform.IDENTITY
+        val point = NormalizedPoint(0.4f, 0.65f)
+        repeat(6) { step ->
+            transform = BoardTransforms.applyGesture(
+                transform, container, center, panX = step * 5f, panY = -step * 9f, zoom = 1.2f,
+            )
+            val anchor = BoardTransforms.anchor(point, container, transform)
+            val back = BoardTransforms.normalize(anchor, container, transform)
+
+            assertEquals(point.x, back.x, 0.0001f)
+            assertEquals(point.y, back.y, 0.0001f)
+        }
+    }
+
+    @Test
+    fun `normalize clamps a drag that leaves the frame`() {
+        val transform = BoardTransform.IDENTITY
+
+        val past = BoardTransforms.normalize(PixelPoint(-80f, 900f), container, transform)
+
+        assertEquals(0f, past.x, 0.0001f)
+        assertEquals(1f, past.y, 0.0001f)
+    }
+
+    @Test
+    fun `normalize survives a container that has not been measured yet`() {
+        val unmeasured = BoardTransforms.normalize(
+            PixelPoint(10f, 10f),
+            PixelSize(0f, 0f),
+            BoardTransform.IDENTITY,
+        )
+
+        assertEquals(0f, unmeasured.x, 0.0001f)
+        assertEquals(0f, unmeasured.y, 0.0001f)
+    }
 }
