@@ -42,7 +42,7 @@ fun FeetRuleBanner(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ProblemMarker(role = ProblemHoldRole.FOOT_ONLY, size = 20.dp)
+            ProblemMarker(role = ProblemHoldRole.FOOT_ONLY, size = 24.dp, onPhoto = false)
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(
@@ -74,7 +74,6 @@ fun StartFinishExplanation(
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             RuleLine(role = ProblemHoldRole.START, text = startRule.description)
-            Spacer(Modifier.width(0.dp))
             RuleLine(role = ProblemHoldRole.FINISH, text = finishRule.description)
         }
     }
@@ -86,7 +85,7 @@ private fun RuleLine(role: ProblemHoldRole, text: String) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 3.dp),
     ) {
-        ProblemMarker(role = role, size = 20.dp)
+        ProblemMarker(role = role, size = 24.dp, onPhoto = false)
         Spacer(Modifier.width(10.dp))
         Text(
             text = text,

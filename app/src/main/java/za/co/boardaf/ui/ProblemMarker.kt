@@ -54,16 +54,22 @@ fun Accent.color(): Color = when (this) {
  * and previews. Every role stays distinguishable in grayscale: Start is a ring with
  * a centre dot and S badge, Regular a plain solid ring, Foot-only a dashed ring with
  * an F badge, Finish a double ring with a check.
+ *
+ * [onPhoto] is false for legends, chips and banners. The translucent backing that
+ * lifts a marker off a busy photo turns muddy grey on the light paper, so off the
+ * photo the marker sits on a solid dark puck instead — the same look it has in
+ * dark mode, where it already read well.
  */
 @Composable
 fun ProblemMarker(
     role: ProblemHoldRole,
     size: Dp,
     modifier: Modifier = Modifier,
+    onPhoto: Boolean = true,
 ) {
     Box(modifier = modifier.size(size)) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawMarker(role)
+            drawMarker(role, backing = if (onPhoto) PHOTO_BACKING else BoardDark)
         }
         if (role == ProblemHoldRole.START || role == ProblemHoldRole.FOOT_ONLY) {
             val badgeSize = size * 0.42f
@@ -88,13 +94,15 @@ fun ProblemMarker(
     }
 }
 
-private fun DrawScope.drawMarker(role: ProblemHoldRole) {
+private val PHOTO_BACKING = Color(0x4D14170F)
+
+private fun DrawScope.drawMarker(role: ProblemHoldRole, backing: Color) {
     val color = role.markerColor()
     val radius = size.minDimension / 2f
     val ringWidth = (size.minDimension * 0.10f).coerceAtLeast(1.5f)
     val ringRadius = radius - ringWidth / 2f - 1f
 
-    drawCircle(color = Color(0x4D14170F), radius = radius)
+    drawCircle(color = backing, radius = radius)
     drawCircle(color = color.copy(alpha = 0.10f), radius = ringRadius)
 
     when (role) {
@@ -156,7 +164,8 @@ fun MarkerLegend(modifier: Modifier = Modifier) {
     ) {
         ProblemHoldRole.entries.forEach { role ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ProblemMarker(role = role, size = 22.dp)
+                // 26dp, not smaller: below that the S and F badges stop being legible.
+                ProblemMarker(role = role, size = 26.dp, onPhoto = false)
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = role.label,

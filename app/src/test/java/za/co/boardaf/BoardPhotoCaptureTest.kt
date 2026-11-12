@@ -50,6 +50,8 @@ class BoardPhotoCaptureTest {
         val missing = mutableSetOf<String>()
         var shareUriWorks = true
         var adoptWorks = true
+        var importWorks = true
+        val importedUris = mutableListOf<String>()
         private var sequence = 0
 
         override fun createPending(): String? {
@@ -71,6 +73,19 @@ class BoardPhotoCaptureTest {
 
         override fun delete(fileName: String) {
             deleted += fileName
+        }
+
+        override fun importFrom(uriString: String): BoardPhoto? {
+            importedUris += uriString
+            sequence++
+            val name = "imported-$sequence.jpg"
+            created += name
+            return if (importWorks) {
+                BoardPhoto(name, widthPx = 1536, heightPx = 2048, capturedAt = 99L)
+            } else {
+                deleted += name
+                null
+            }
         }
 
         override fun pathFor(photo: BoardPhoto): String? =
@@ -143,6 +158,55 @@ class BoardPhotoCaptureTest {
             events.filterIsInstance<BoardEvent.Message>().single().text,
         )
         job.cancel()
+    }
+
+    @Test
+    fun `a picked photo becomes the board photo and resolves to a path`() = runTest {
+        val store = FakeStore(snapshot())
+        val photos = FakePhotoStore()
+        val vm = viewModel(store, photos)
+
+        vm.importBoardPhoto("content://media/picker/42")
+
+        assertEquals("content://media/picker/42", photos.importedUris.single())
+        assertEquals("imported-1.jpg", vm.state.value.setup.photo?.fileName)
+        assertEquals("/fake/imported-1.jpg", vm.state.value.boardPhotoPath)
+        assertEquals("imported-1.jpg", store.saved?.setup?.photo?.fileName)
+        assertTrue(photos.deleted.isEmpty())
+    }
+
+    @Test
+    fun `a pick that can't be read reports it and changes nothing`() = runTest {
+        val store = FakeStore(snapshot())
+        val photos = FakePhotoStore().apply { importWorks = false }
+        val vm = viewModel(store, photos)
+        val events = mutableListOf<BoardEvent>()
+        val job = launchCollect(vm, events)
+
+        vm.importBoardPhoto("content://media/picker/42")
+
+        assertNull(vm.state.value.setup.photo)
+        assertEquals(
+            "That photo couldn't be read. The board is unchanged.",
+            events.filterIsInstance<BoardEvent.Message>().single().text,
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `importing only discards the old file once the new one is adopted`() = runTest {
+        val store = FakeStore(snapshot())
+        val photos = FakePhotoStore()
+        val vm = viewModel(store, photos)
+
+        vm.beginBoardPhotoCapture()
+        vm.completeBoardPhotoCapture(saved = true)
+        assertTrue(photos.deleted.isEmpty())
+
+        vm.importBoardPhoto("content://media/picker/42")
+
+        assertEquals("imported-2.jpg", vm.state.value.setup.photo?.fileName)
+        assertEquals(listOf("pending-1.jpg"), photos.deleted)
     }
 
     @Test

@@ -30,6 +30,15 @@ interface BoardPhotoStore {
      */
     fun adopt(fileName: String): BoardPhoto?
 
+    /**
+     * Copy a photo the system picker handed over (a `content://` URI string, the
+     * same shape [shareUri] hands out) into the store and normalize it exactly
+     * like a capture. One step, unlike the camera's two: the app reads the source
+     * itself, so nothing external ever writes into the store. Returns null —
+     * having cleaned up — when the source can't be read as an image.
+     */
+    fun importFrom(uriString: String): BoardPhoto?
+
     fun delete(fileName: String)
 
     /** Absolute path of a stored photo, or null when the file is gone. */

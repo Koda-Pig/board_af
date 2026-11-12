@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
@@ -70,6 +71,29 @@ class AndroidBoardPhotoStore(context: Context) : BoardPhotoStore {
 
     override fun delete(fileName: String) {
         runCatching { File(directory(), fileName).delete() }
+    }
+
+    /**
+     * The picker source is read once, on the spot: gallery images can be large,
+     * but the copy is a straight byte stream and [adopt] does the expensive decode
+     * afterwards on the local file, exactly as it does for a camera capture.
+     */
+    override fun importFrom(uriString: String): BoardPhoto? {
+        val fileName = createPending() ?: return null
+        val file = File(directory(), fileName)
+        val copied = runCatching {
+            val source = appContext.contentResolver.openInputStream(Uri.parse(uriString))
+                ?: return@runCatching false
+            source.use { input ->
+                FileOutputStream(file).use { output -> input.copyTo(output) }
+            }
+            true
+        }.getOrDefault(false)
+        if (!copied) {
+            delete(fileName)
+            return null
+        }
+        return adopt(fileName)
     }
 
     override fun pathFor(photo: BoardPhoto): String? {

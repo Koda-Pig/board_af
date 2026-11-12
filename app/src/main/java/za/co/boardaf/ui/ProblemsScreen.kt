@@ -1,5 +1,6 @@
 package za.co.boardaf.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
@@ -201,6 +203,14 @@ fun ProblemsScreen(
                             selected = true,
                             onClick = clear,
                             label = { Text(label) },
+                            // Says what a tap does: these chips remove their filter.
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = "Remove filter",
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
                         )
                     }
                 }
@@ -217,14 +227,32 @@ fun ProblemsScreen(
         }
         if (visibleProblems.isEmpty()) {
             item {
-                Text(
-                    "No problems match that filter.",
+                val searching = query.isNotBlank()
+                val filtered = activeFilterChips.isNotEmpty()
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(30.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                        .padding(vertical = 30.dp, horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = when {
+                            searching && !filtered -> "No problems match “$query”."
+                            searching -> "No problems match “$query” with these filters."
+                            filtered -> "No problems match these filters."
+                            state.problems.isEmpty() -> "No problems yet. Tap New to set one."
+                            else -> "Nothing active. Archived problems are under Filters → Status."
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (searching || filtered) {
+                        TextButton(
+                            onClick = { actions.onLibraryQueryChange(library.cleared().copy(text = "")) },
+                        ) { Text(if (searching && !filtered) "Clear search" else "Clear search and filters") }
+                    }
+                }
             }
         }
 
@@ -369,7 +397,7 @@ private fun DeletedProblemRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "est. ${record.problem.grade.label(state.gradeSystem)} · " +
+                    "${record.problem.grade.label(state.gradeSystem)} · " +
                         "${holdCountLabel(record.problem.assignments.size)} · deleted " +
                         DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(record.deletedAt)),
                     style = MaterialTheme.typography.bodySmall,
@@ -441,13 +469,19 @@ private fun ProblemCard(
     onEdit: () -> Unit,
 ) {
     var menuOpen by rememberSaveable { mutableStateOf(false) }
-    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val displayName = problemDisplayName(problem.name)
+    val onBoard = problem.id == state.selectedProblemId
 
     Card(
         onClick = onOpen,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = if (problem.id == state.selectedProblemId) CardDefaults.outlinedCardBorder() else null,
+        colors = CardDefaults.cardColors(
+            containerColor = if (onBoard) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        border = if (onBoard) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Row(
             modifier = Modifier
@@ -457,19 +491,16 @@ private fun ProblemCard(
         ) {
             Box(Modifier.size(11.dp).background(problem.accent.color(), CircleShape))
             Spacer(Modifier.width(11.dp))
+            // The name gets its own line and may wrap: with the status chip beside
+            // it, large font sizes squeezed it down to its first letters.
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    StatusChip(state = problem.publicationState)
-                }
+                Text(
+                    displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text(
                     "${problem.setter} · ${holdCountLabel(problem.assignments.size)} · ${problem.feetRule.label}",
                     style = MaterialTheme.typography.bodySmall,
@@ -477,14 +508,37 @@ private fun ProblemCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // Published is the normal case; only the exceptions get a chip.
+                if (problem.publicationState != PublicationState.PUBLISHED || onBoard) {
+                    Row(
+                        modifier = Modifier.padding(top = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (problem.publicationState != PublicationState.PUBLISHED) {
+                            StatusChip(state = problem.publicationState)
+                        }
+                        if (onBoard) {
+                            Text(
+                                "On the board",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
             }
+            Spacer(Modifier.width(8.dp))
+            // No "est." here: the header already says grades are setter estimates.
             Surface(color = MaterialTheme.colorScheme.inverseSurface, shape = RoundedCornerShape(7.dp)) {
                 Text(
-                    "est. ${problem.grade.label(state.gradeSystem)} · ${problem.angleDegrees}°",
+                    "${problem.grade.label(state.gradeSystem)} · ${problem.angleDegrees}°",
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                     color = MaterialTheme.colorScheme.inverseOnSurface,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
                 )
             }
             Box {
@@ -525,39 +579,17 @@ private fun ProblemCard(
                             },
                         )
                     }
+                    // No confirm dialog, the same as Archive: the delete is
+                    // recoverable, and the snackbar that follows offers Undo.
                     DropdownMenuItem(
-                        text = { Text("Delete") },
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             menuOpen = false
-                            confirmDelete = true
+                            actions.onDeleteProblem(problem.id)
                         },
                     )
                 }
             }
         }
-    }
-
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete problem?") },
-            text = {
-                Text(
-                    "“$displayName” leaves the library. You can put it back from " +
-                        "Recently deleted for ${DeletedProblems.RETENTION_MS.inDays()} days.",
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-                        actions.onDeleteProblem(problem.id)
-                    },
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
-            },
-        )
     }
 }

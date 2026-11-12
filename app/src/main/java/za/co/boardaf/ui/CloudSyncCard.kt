@@ -36,7 +36,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.data.sync.CloudSyncAvailability
 import za.co.boardaf.data.sync.CloudSyncState
-import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import java.text.DateFormat
 import java.util.Date
@@ -61,8 +60,8 @@ fun CloudSyncCard(
         when {
             cloud.availability == CloudSyncAvailability.UNCONFIGURED -> {
                 Text(
-                    "This build has no Firebase configuration, so problems stay on this device. " +
-                        "See docs/firebase-setup.md to enable sync.",
+                    "Cloud sync isn't available in this version of the app, so your " +
+                        "problems are kept on this device.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -74,7 +73,7 @@ fun CloudSyncCard(
         }
 
         cloud.lastError?.let { error ->
-            Text(error, style = MaterialTheme.typography.bodySmall, color = Coral)
+            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
 }

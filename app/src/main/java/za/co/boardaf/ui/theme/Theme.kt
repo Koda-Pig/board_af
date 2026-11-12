@@ -24,6 +24,13 @@ val Sky = Color(0xFF70C5DD)
 val Gold = Color(0xFFE9BD62)
 val Moss = Color(0xFF97C27F)
 
+/**
+ * Coral darkened for *text* on the light paper background: Coral itself is ~2.6:1
+ * there, under the 4.5:1 body-text guideline. Fills and markers keep [Coral].
+ * Surfaced as the light scheme's `error`, so text reads it via the theme.
+ */
+val CoralInk = Color(0xFFB5492C)
+
 private val BoardLightColorScheme = lightColorScheme(
     primary = Forest,
     onPrimary = BoardSurface,
@@ -39,9 +46,28 @@ private val BoardLightColorScheme = lightColorScheme(
     surfaceVariant = Color(0xFFE9EDDE),
     onSurfaceVariant = BoardMuted,
     outline = BoardLine,
+    outlineVariant = BoardLine,
+    // Selected chips, the inactive slider track and dialogs/menus all read these.
+    // Left unset, Material's baseline lavender shows through everywhere they're used.
+    secondaryContainer = Color(0xFFDCE6CF),
+    onSecondaryContainer = BoardInk,
+    tertiaryContainer = Color(0xFFE4EBD8),
+    onTertiaryContainer = BoardInk,
+    surfaceTint = Forest,
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = BoardSurface,
+    surfaceContainer = Color(0xFFF0F3E8),
+    surfaceContainerHigh = Color(0xFFEBEFE2),
+    surfaceContainerHighest = Color(0xFFE5EADB),
+    error = CoralInk,
+    onError = BoardSurface,
+    errorContainer = Color(0xFFF8DCD3),
+    onErrorContainer = BoardInk,
     // Grade pills and other "flipped" chips: dark on light, light on dark.
     inverseSurface = BoardDark,
     inverseOnSurface = BoardPaper,
+    // Snackbar action text sits on inverseSurface.
+    inversePrimary = Sage,
 )
 
 private val BoardDarkColorScheme = darkColorScheme(
@@ -59,8 +85,25 @@ private val BoardDarkColorScheme = darkColorScheme(
     surfaceVariant = Color(0xFF323932),
     onSurfaceVariant = Color(0xFFB0B8A8),
     outline = Color(0xFF4A5248),
+    outlineVariant = Color(0xFF4A5248),
+    secondaryContainer = Color(0xFF3A4A3A),
+    onSecondaryContainer = BoardPaper,
+    tertiaryContainer = Color(0xFF3A4A3A),
+    onTertiaryContainer = BoardPaper,
+    surfaceTint = Sage,
+    surfaceContainerLowest = Color(0xFF151916),
+    surfaceContainerLow = Color(0xFF1F2420),
+    surfaceContainer = Color(0xFF242A26),
+    surfaceContainerHigh = Color(0xFF2B322D),
+    surfaceContainerHighest = Color(0xFF323932),
+    // Coral already clears 5:1 on the dark backgrounds.
+    error = Coral,
+    onError = BoardDark,
+    errorContainer = Color(0xFF5A3026),
+    onErrorContainer = BoardPaper,
     inverseSurface = BoardPaper,
     inverseOnSurface = BoardDark,
+    inversePrimary = Forest,
 )
 
 @Composable

@@ -112,6 +112,8 @@ data class BoardActions(
     /** Prepares a capture destination and returns the URI to launch the camera with. */
     val onBeginBoardPhotoCapture: () -> String? = { null },
     val onBoardPhotoCaptured: (Boolean) -> Unit = {},
+    /** Adopts a photo the system picker returned, as a `content://` URI string. */
+    val onBoardPhotoImported: (String) -> Unit = {},
     val onClearBoardPhoto: () -> Unit = {},
     val onSetGradeSystem: (GradeSystem) -> Unit = {},
     val onCloudSignIn: (String, String) -> Unit = { _, _ -> },
@@ -190,6 +192,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
             onDismissHoldSuggestion = viewModel::dismissHoldSuggestion,
             onBeginBoardPhotoCapture = viewModel::beginBoardPhotoCapture,
             onBoardPhotoCaptured = viewModel::completeBoardPhotoCapture,
+            onBoardPhotoImported = viewModel::importBoardPhoto,
             onClearBoardPhoto = viewModel::clearBoardPhoto,
             onSetGradeSystem = viewModel::setGradeSystem,
             onCloudSignIn = viewModel::cloudSignIn,
@@ -240,8 +243,9 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                             SnackbarDuration.Short
                         },
                     )
-                    if (result == SnackbarResult.ActionPerformed && event.undoArchive != null) {
-                        viewModel.restoreArchived(event.undoArchive)
+                    if (result == SnackbarResult.ActionPerformed) {
+                        event.undoArchive?.let(viewModel::restoreArchived)
+                        event.undoDelete?.let(viewModel::undoDelete)
                     }
                 }
             }
@@ -288,18 +292,12 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = {
-                // On Board the sheet rests BOARD_SHEET_PEEK_HEIGHT above the nav
-                // bar, and the default host would render the snackbar on top of
-                // that peek — hiding the setter's header and the tap-rejection's
-                // own context exactly when it is needed. Lift it clear.
-                SnackbarHost(
-                    hostState = snackbarHostState,
-                    modifier = if (currentDestination == Destination.BOARD) {
-                        Modifier.padding(bottom = BOARD_SHEET_PEEK_HEIGHT)
-                    } else {
-                        Modifier
-                    },
-                )
+                // Board shows its snackbars at the top instead (below): down here they
+                // covered the setter strip and the kickboard row — the very holds a
+                // tap rejection is usually about.
+                if (currentDestination != Destination.BOARD) {
+                    SnackbarHost(hostState = snackbarHostState)
+                }
             },
             // No top bar: the board photo gets that vertical space instead.
             bottomBar = {
@@ -406,6 +404,14 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                             )
                         }
                     }
+                }
+                if (currentDestination == Destination.BOARD) {
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = padding.calculateTopPadding()),
+                    )
                 }
             }
         }

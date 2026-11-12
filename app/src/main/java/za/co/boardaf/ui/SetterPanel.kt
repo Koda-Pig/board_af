@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,12 +14,11 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Check
@@ -40,24 +41,29 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import za.co.boardaf.BoardUiState
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoulderGrade
 import za.co.boardaf.model.FeetRule
+import za.co.boardaf.model.IssueCode
 import za.co.boardaf.model.IssueSeverity
 import za.co.boardaf.model.ProblemAngle
 import za.co.boardaf.model.ProblemHoldRole
@@ -67,13 +73,41 @@ import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.GuidedStep
 import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.setter.SetterReducer
-import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import za.co.boardaf.ui.theme.Sage
 
 /**
- * The setter wizard: feet rule → start holds → other holds → finish holds →
- * details & review. Forward progress is gated per step; backward is always free.
+ * UI-only state the setter's strip and body share: which steps have had a gated
+ * Next tapped (so the gate hint shows), and the clear-all confirmation.
+ * Remember it inside the setting branch so it resets with each session.
+ */
+@Stable
+class SetterChromeState(attemptedNextMask: Int = 0) {
+    /** Bitmask of GuidedStep ordinals where Next was tapped while gated. */
+    var attemptedNextMask by mutableIntStateOf(attemptedNextMask)
+    var confirmClear by mutableStateOf(false)
+
+    fun attemptedNext(step: GuidedStep): Boolean = attemptedNextMask and (1 shl step.ordinal) != 0
+
+    fun markAttemptedNext(step: GuidedStep) {
+        attemptedNextMask = attemptedNextMask or (1 shl step.ordinal)
+    }
+
+    companion object {
+        val Saver: Saver<SetterChromeState, Int> = Saver(
+            save = { it.attemptedNextMask },
+            restore = { SetterChromeState(it) },
+        )
+    }
+}
+
+@Composable
+fun rememberSetterChromeState(): SetterChromeState =
+    rememberSaveable(saver = SetterChromeState.Saver) { SetterChromeState() }
+
+/**
+ * The setter for the wide layout, where there is room for everything at once:
+ * the working strip and the body in one card beside the board.
  */
 @Composable
 fun SetterPanel(
@@ -81,104 +115,283 @@ fun SetterPanel(
     actions: BoardActions,
     modifier: Modifier = Modifier,
 ) {
-    val setter = state.setter
-    val draft = setter.draft
-    val step = setter.guidedStep
-    var confirmClear by rememberSaveable { mutableStateOf(false) }
-    // Bitmask of GuidedStep ordinals where Next was tapped while gated.
-    var attemptedNextMask by rememberSaveable { mutableIntStateOf(0) }
-
+    val chrome = rememberSetterChromeState()
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (draft.editingProblemId == null) "NEW PROBLEM" else "EDITING DRAFT",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = draft.name.ifBlank { "Set the line" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                IconButton(onClick = actions.onCancelSetting) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Close setter")
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SetterStrip(state = state, actions = actions, chrome = chrome, onShowDetails = {})
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            SetterBody(state = state, actions = actions, chrome = chrome)
+        }
+    }
+    SetterDialogs(state = state, actions = actions, chrome = chrome)
+}
+
+/**
+ * Everything needed while tapping holds, sized to fit the phone sheet's collapsed
+ * peek: which step you're on, what to do, the active role(s) with counts, undo,
+ * and the way forward. The setter can work a whole problem from here without
+ * expanding the sheet — only the feet rule and details steps need the body, and
+ * the board screen expands the sheet for those on its own.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SetterStrip(
+    state: BoardUiState,
+    actions: BoardActions,
+    chrome: SetterChromeState,
+    /** Bring the body into view; quick set's form lives there. */
+    onShowDetails: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val setter = state.setter
+    val draft = setter.draft
+    val quick = setter.mode == SetterMode.QUICK
+    val step = setter.guidedStep
+    // isNewProblem, not editingProblemId: autosave gives a new draft an id on the
+    // first tap, which used to flip this label to "Editing" mid-session.
+    val session = if (setter.isNewProblem) "NEW PROBLEM" else "EDITING"
+    val blocking = SetterReducer.firstUnsatisfiedStep(draft)
+    val nextEnabled = blocking == null || blocking.ordinal > step.ordinal
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!quick && step.ordinal > 0) {
+                IconButton(onClick = actions.onGuidedBack) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Previous step")
                 }
             }
-
-            SetterModeToggle(mode = setter.mode, onSelect = actions.onSetSetterMode)
-
-            if (setter.mode == SetterMode.QUICK) {
-                QuickSetContent(
-                    state = state,
-                    actions = actions,
-                    onClearRequested = { confirmClear = true },
-                )
-            } else {
-                WizardStepper(
-                    state = state,
-                    actions = actions,
-                    hasAttemptedNext = attemptedNextMask and (1 shl step.ordinal) != 0,
-                )
-
-                if (step != GuidedStep.FEET_RULE) {
-                    FeetRuleBanner(
-                        feetRule = draft.feetRule,
-                        footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
-                    )
-                }
-
-                when (step) {
-                    GuidedStep.FEET_RULE -> FeetRuleStep(state = state, actions = actions)
-                    GuidedStep.START, GuidedStep.OTHER, GuidedStep.FINISH -> HoldStep(
-                        state = state,
-                        actions = actions,
-                        onClearRequested = { confirmClear = true },
-                    )
-                    GuidedStep.DETAILS -> DetailsStep(state = state, actions = actions)
-                }
-
-                MarkerLegend()
-
-                WizardNavRow(
-                    state = state,
-                    actions = actions,
-                    onAttemptNext = {
-                        attemptedNextMask = attemptedNextMask or (1 shl step.ordinal)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (quick) {
+                        "$session · QUICK SET"
+                    } else {
+                        "$session · STEP ${step.ordinal + 1} OF ${GuidedStep.entries.size}"
                     },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
                 )
+                Text(
+                    text = if (quick) "Tap your holds" else step.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = actions.onCancelSetting) {
+                Icon(Icons.Rounded.Close, contentDescription = "Close setter")
+            }
+        }
+
+        if (quick) {
+            Text(
+                text = "Lowest row starts, top row finishes, kickboard holds are feet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            StepHint(
+                state = state,
+                actions = actions,
+                hasAttemptedNext = chrome.attemptedNext(step),
+            )
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            when {
+                quick -> {
+                    Text(
+                        text = holdCountLabel(draft.assignments.size),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f),
+                    )
+                    UndoButton(state, actions)
+                    Button(
+                        onClick = onShowDetails,
+                        colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
+                    ) { Text("Details") }
+                }
+
+                step.roleForStep != null -> {
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        paletteRoles(state).forEach { role ->
+                            FilterChip(
+                                selected = setter.activeRole == role,
+                                onClick = { actions.onSelectRole(role) },
+                                label = { Text("${role.label} · ${draft.countFor(role)}") },
+                                leadingIcon = { ProblemMarker(role = role, size = 18.dp, onPhoto = false) },
+                            )
+                        }
+                    }
+                    UndoButton(state, actions)
+                }
+
+                step == GuidedStep.FEET_RULE -> Text(
+                    text = draft.feetRule.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                )
+
+                else -> Spacer(Modifier.weight(1f))
+            }
+
+            if (!quick && step != GuidedStep.DETAILS) {
+                // Stays clickable when gated so the first tap can reveal the gate hint.
+                Button(
+                    onClick = {
+                        if (nextEnabled) actions.onGuidedNext() else chrome.markAttemptedNext(step)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (nextEnabled) Forest else Forest.copy(alpha = 0.38f),
+                        contentColor = Color.White,
+                    ),
+                ) { Text("Next") }
             }
         }
     }
+}
 
-    if (confirmClear) {
+/**
+ * The step's instruction, or — once Next was tapped while gated — why it's
+ * blocked. On details & review the blocking step is an earlier one, so the hint
+ * also offers the way back there.
+ */
+@Composable
+private fun StepHint(state: BoardUiState, actions: BoardActions, hasAttemptedNext: Boolean) {
+    val current = state.setter.guidedStep
+    val blocking = SetterReducer.firstUnsatisfiedStep(state.setter.draft)
+    val gated = blocking != null && blocking.ordinal <= current.ordinal
+    // DETAILS renders no Next button, so hasAttemptedNext can never be set there —
+    // yet that is exactly where a user lands on an incomplete problem and needs a
+    // route back to the blocking step.
+    val showGate = gated && (hasAttemptedNext || current == GuidedStep.DETAILS)
+
+    if (showGate && blocking != null) {
+        Column {
+            Text(
+                text = blocking.gateHint.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            // Only offer to go somewhere when it's somewhere else.
+            if (blocking != current) {
+                TextButton(
+                    onClick = { actions.onGoToGuidedStep(blocking) },
+                    contentPadding = PaddingValues(horizontal = 0.dp),
+                ) { Text("Go to ${blocking.title}") }
+            }
+        }
+    } else {
+        Text(
+            text = current.hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun UndoButton(state: BoardUiState, actions: BoardActions) {
+    IconButton(onClick = actions.onUndo, enabled = state.setter.canUndo) {
+        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
+    }
+}
+
+private fun paletteRoles(state: BoardUiState): List<ProblemHoldRole> {
+    val draft = state.setter.draft
+    return when (state.setter.guidedStep) {
+        GuidedStep.START -> listOf(ProblemHoldRole.START)
+        GuidedStep.FINISH -> listOf(ProblemHoldRole.FINISH)
+        else -> if (draft.feetRule.usesFootMarks) {
+            listOf(ProblemHoldRole.REGULAR, ProblemHoldRole.FOOT_ONLY)
+        } else {
+            listOf(ProblemHoldRole.REGULAR)
+        }
+    }
+}
+
+/**
+ * What the expanded sheet adds below the strip: mode switch, step overview, the
+ * feet rule picker, the less frequent hold tools, and the details form.
+ */
+@Composable
+fun SetterBody(
+    state: BoardUiState,
+    actions: BoardActions,
+    chrome: SetterChromeState,
+    modifier: Modifier = Modifier,
+) {
+    val setter = state.setter
+    val draft = setter.draft
+    val step = setter.guidedStep
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .imePadding(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SetterModeToggle(mode = setter.mode, onSelect = actions.onSetSetterMode)
+
+        if (setter.mode == SetterMode.QUICK) {
+            QuickSetContent(
+                state = state,
+                actions = actions,
+                onClearRequested = { chrome.confirmClear = true },
+            )
+        } else {
+            StepOverview(state = state, actions = actions)
+
+            if (step != GuidedStep.FEET_RULE) {
+                FeetRuleBanner(
+                    feetRule = draft.feetRule,
+                    footMarkCount = draft.countFor(ProblemHoldRole.FOOT_ONLY),
+                )
+            }
+
+            when (step) {
+                GuidedStep.FEET_RULE -> FeetRuleSelector(state = state, actions = actions)
+                GuidedStep.START, GuidedStep.OTHER, GuidedStep.FINISH -> {
+                    HoldTools(state = state, actions = actions, onClearRequested = { chrome.confirmClear = true })
+                    MarkerLegend()
+                }
+                GuidedStep.DETAILS -> DetailsStep(state = state, actions = actions)
+            }
+        }
+    }
+}
+
+/** Dialogs shared by strip and body; render once, alongside them. */
+@Composable
+fun SetterDialogs(state: BoardUiState, actions: BoardActions, chrome: SetterChromeState) {
+    if (chrome.confirmClear) {
         AlertDialog(
-            onDismissRequest = { confirmClear = false },
+            onDismissRequest = { chrome.confirmClear = false },
             title = { Text("Clear all holds?") },
-            text = { Text("This removes all ${draft.assignments.size} hold assignments from the draft. You can undo afterwards.") },
+            text = {
+                Text(
+                    "This removes all ${state.setter.draft.assignments.size} hold assignments " +
+                        "from the draft. You can undo afterwards.",
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        confirmClear = false
+                        chrome.confirmClear = false
                         actions.onClearDraftHolds()
                     },
                 ) { Text("Clear") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("Keep") }
+                TextButton(onClick = { chrome.confirmClear = false }) { Text("Keep") }
             },
         )
     }
@@ -212,14 +425,11 @@ private fun QuickSetContent(
     actions: BoardActions,
     onClearRequested: () -> Unit,
 ) {
-    val setter = state.setter
-    val draft = setter.draft
+    val draft = state.setter.draft
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "Tap the holds you want. The lowest row becomes the start, the topmost " +
-                "row the finish, kickboard holds become feet. Switch to Guided steps to " +
-                "fine-tune individual roles.",
+            text = "Switch to Guided steps to fine-tune individual roles.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -227,27 +437,7 @@ private fun QuickSetContent(
         Text("Feet rule", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FeetRuleSelector(state = state, actions = actions)
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
-                Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
-            }
-            IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
-                Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
-            }
-            IconButton(
-                onClick = onClearRequested,
-                enabled = draft.assignments.isNotEmpty(),
-            ) {
-                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear all holds")
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = holdCountLabel(draft.assignments.size),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
+        HoldTools(state = state, actions = actions, onClearRequested = onClearRequested)
         MarkerLegend()
         StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
 
@@ -257,126 +447,47 @@ private fun QuickSetContent(
     }
 }
 
+/** All five steps at a glance, wrapped rather than scrolled so none is clipped. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WizardStepper(
-    state: BoardUiState,
-    actions: BoardActions,
-    hasAttemptedNext: Boolean,
-) {
-    val setter = state.setter
-    val draft = setter.draft
-    val current = setter.guidedStep
+private fun StepOverview(state: BoardUiState, actions: BoardActions) {
+    val draft = state.setter.draft
+    val current = state.setter.guidedStep
     val blocking = SetterReducer.firstUnsatisfiedStep(draft)
     val reachableOrdinal = blocking?.ordinal ?: GuidedStep.entries.lastIndex
-    val nextEnabled = blocking == null || blocking.ordinal > current.ordinal
-    val listState = rememberLazyListState()
 
-    LaunchedEffect(current) {
-        listState.animateScrollToItem(current.ordinal)
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Step ${current.ordinal + 1} of ${GuidedStep.entries.size}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Bold,
-        )
-        LazyRow(
-            state = listState,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            items(GuidedStep.entries) { step ->
-                FilterChip(
-                    selected = current == step,
-                    enabled = step.ordinal <= current.ordinal || step.ordinal <= reachableOrdinal,
-                    onClick = { actions.onGoToGuidedStep(step) },
-                    label = { Text("${step.ordinal + 1} · ${step.title}") },
-                    leadingIcon = if (step.gateHint != null && SetterReducer.stepSatisfied(draft, step)) {
-                        {
-                            Icon(
-                                Icons.Rounded.Check,
-                                contentDescription = "${step.title} done",
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
-        // DETAILS renders no Next button, so hasAttemptedNext can never be set
-        // there — yet that is exactly where a user lands on an incomplete problem
-        // and needs a route back to the blocking step.
-        val showGate = !nextEnabled &&
-            blocking != null &&
-            (hasAttemptedNext || current == GuidedStep.DETAILS)
-        if (showGate) {
-            TextButton(
-                onClick = { actions.onGoToGuidedStep(blocking) },
-                contentPadding = PaddingValues(0.dp),
-            ) {
-                Text(
-                    // Name the destination: the chip for that step is often
-                    // scrolled off-screen, so "go there" has to be explicit.
-                    text = "${blocking.gateHint.orEmpty()} " +
-                        "Go to step ${blocking.ordinal + 1} · ${blocking.title}.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Coral,
-                )
-            }
-        } else {
-            Text(
-                text = current.hint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        GuidedStep.entries.forEach { step ->
+            FilterChip(
+                selected = current == step,
+                enabled = step.ordinal <= current.ordinal || step.ordinal <= reachableOrdinal,
+                onClick = { actions.onGoToGuidedStep(step) },
+                label = { Text("${step.ordinal + 1} · ${step.title}") },
+                leadingIcon = if (step.gateHint != null && SetterReducer.stepSatisfied(draft, step)) {
+                    {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = "${step.title} done",
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else {
+                    null
+                },
             )
         }
     }
 }
 
-@Composable
-private fun WizardNavRow(
-    state: BoardUiState,
-    actions: BoardActions,
-    onAttemptNext: () -> Unit,
-) {
-    val current = state.setter.guidedStep
-    val blocking = SetterReducer.firstUnsatisfiedStep(state.setter.draft)
-    val nextEnabled = blocking == null || blocking.ordinal > current.ordinal
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        TextButton(
-            onClick = actions.onGuidedBack,
-            enabled = current.ordinal > 0,
-        ) { Text("Back") }
-        Spacer(Modifier.weight(1f))
-        if (current != GuidedStep.DETAILS) {
-            // Stay clickable when gated so the first tap can reveal the coral gate hint.
-            Button(
-                onClick = {
-                    if (nextEnabled) actions.onGuidedNext() else onAttemptNext()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (nextEnabled) Forest else Forest.copy(alpha = 0.38f),
-                    contentColor = Color.White,
-                ),
-            ) { Text("Next") }
-        }
-    }
-}
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FeetRuleSelector(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(availableFeetRules(state)) { rule ->
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            availableFeetRules(state).forEach { rule ->
                 FilterChip(
                     selected = draft.feetRule == rule,
                     onClick = { actions.onSetFeetRule(rule) },
@@ -392,74 +503,30 @@ private fun FeetRuleSelector(state: BoardUiState, actions: BoardActions) {
     }
 }
 
+/** The less frequent hold tools; undo itself lives in the strip. */
 @Composable
-private fun FeetRuleStep(state: BoardUiState, actions: BoardActions) {
-    val setter = state.setter
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FeetRuleSelector(state = state, actions = actions)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
-                Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
-            }
-            IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
-                Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
-            }
-        }
-    }
-}
-
-@Composable
-private fun HoldStep(
+private fun HoldTools(
     state: BoardUiState,
     actions: BoardActions,
     onClearRequested: () -> Unit,
 ) {
     val setter = state.setter
-    val draft = setter.draft
-    val paletteRoles = when (setter.guidedStep) {
-        GuidedStep.START -> listOf(ProblemHoldRole.START)
-        GuidedStep.FINISH -> listOf(ProblemHoldRole.FINISH)
-        else -> if (draft.feetRule.usesFootMarks) {
-            listOf(ProblemHoldRole.REGULAR, ProblemHoldRole.FOOT_ONLY)
-        } else {
-            listOf(ProblemHoldRole.REGULAR)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
+            Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
         }
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (paletteRoles.size > 1) {
-            Text("Tap role, then tap holds", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        IconButton(
+            onClick = onClearRequested,
+            enabled = setter.draft.assignments.isNotEmpty(),
+        ) {
+            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear all holds")
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(paletteRoles) { role ->
-                FilterChip(
-                    selected = setter.activeRole == role,
-                    onClick = { actions.onSelectRole(role) },
-                    label = { Text("${role.label} · ${draft.countFor(role)}") },
-                    leadingIcon = { ProblemMarker(role = role, size = 18.dp) },
-                )
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = actions.onUndo, enabled = setter.canUndo) {
-                Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = "Undo")
-            }
-            IconButton(onClick = actions.onRedo, enabled = setter.canRedo) {
-                Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = "Redo")
-            }
-            IconButton(
-                onClick = onClearRequested,
-                enabled = draft.assignments.isNotEmpty(),
-            ) {
-                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear all holds")
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = holdCountLabel(draft.assignments.size),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = holdCountLabel(setter.draft.assignments.size),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -470,11 +537,10 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         StartFinishExplanation(startRule = draft.startRule, finishRule = draft.finishRule)
 
-        // The board stays on screen here but takes no taps, which is worth saying
-        // out loud — this is where a library edit lands.
+        // The board takes no taps on this step; say so, since a library edit
+        // lands here and the obvious first move is to tap a hold.
         Text(
-            text = "Holds are locked while you review. " +
-                "Go back to a hold step to add or change them.",
+            text = "Holds are locked on this step. Go back a step to change them.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -486,12 +552,17 @@ private fun DetailsStep(state: BoardUiState, actions: BoardActions) {
 }
 
 /** Name, grade, angle, accent, validation and save/publish — shared by wizard review and quick set. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
     val draft = state.setter.draft
     val issues = state.draftIssues
     val errors = issues.filter { it.severity == IssueSeverity.ERROR }
     val warnings = issues.filter { it.severity == IssueSeverity.WARNING }
+    // A missing name is said under the name field, in neutral ink: shown as a
+    // coral error on arrival, it read as a mistake before anything was typed.
+    val nameMissing = errors.any { it.code == IssueCode.NAME_MISSING }
+    val otherErrors = errors.filterNot { it.code == IssueCode.NAME_MISSING }
     var confirmForerun by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -500,11 +571,20 @@ private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
             onValueChange = actions.onDraftNameChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Problem name") },
+            supportingText = if (nameMissing) {
+                { Text("Needed before you can publish.") }
+            } else {
+                null
+            },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Words,
+                imeAction = ImeAction.Done,
+            ),
         )
         Text("Grade · setter estimate", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(BoulderGrade.options(state.gradeSystem)) { grade ->
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            BoulderGrade.options(state.gradeSystem).forEach { grade ->
                 FilterChip(
                     selected = draft.grade.label(state.gradeSystem) == grade.label(state.gradeSystem),
                     onClick = { actions.onDraftGradeChange(grade) },
@@ -516,29 +596,39 @@ private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
             angleDegrees = draft.angleDegrees,
             onAngleChange = actions.onDraftAngleChange,
         )
-        Text("Accent color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(Accent.entries) { accent ->
+        Column {
+            Text("Accent color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "The dot that tells this problem apart in the library.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Accent.entries.forEach { accent ->
                 FilterChip(
                     selected = draft.accent == accent,
                     onClick = { actions.onDraftAccentChange(accent) },
                     label = { Text(accent.label) },
                     leadingIcon = {
-                        Box(Modifier.size(8.dp).background(accent.color(), CircleShape))
+                        Box(Modifier.size(10.dp).background(accent.color(), CircleShape))
                     },
                 )
             }
         }
-        if (errors.isEmpty()) {
-            Surface(color = Sage.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
+        when {
+            otherErrors.isNotEmpty() -> IssueGroup(
+                title = "Fix before publishing",
+                issues = otherErrors,
+                tint = MaterialTheme.colorScheme.error,
+            )
+            !nameMissing -> Surface(color = Sage.copy(alpha = 0.18f), shape = RoundedCornerShape(10.dp)) {
                 Text(
                     text = "Everything checks out. Publishing still needs a successful forerun.",
                     modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-        } else {
-            IssueGroup(title = "Fix before publishing", issues = errors, tint = Coral)
         }
         if (warnings.isNotEmpty()) {
             IssueGroup(title = "Worth a look", issues = warnings, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -622,7 +712,7 @@ private fun AngleField(angleDegrees: Int, onAngleChange: (Int) -> Unit) {
 }
 
 @Composable
-private fun IssueGroup(title: String, issues: List<ProblemIssue>, tint: androidx.compose.ui.graphics.Color) {
+private fun IssueGroup(title: String, issues: List<ProblemIssue>, tint: Color) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
             text = "$title · ${issues.size}",

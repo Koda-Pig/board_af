@@ -2,6 +2,7 @@ package za.co.boardaf.ui
 
 import androidx.core.net.toUri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -21,8 +22,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -104,6 +108,36 @@ fun SetupScreen(
             Text(board.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         }
 
+        // The one everyday preference, so it comes before the calibration tools.
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Grade system", fontWeight = FontWeight.Bold)
+                Text(
+                    "How difficulty is shown across the app.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GradeSystem.entries.forEach { system ->
+                        FilterChip(
+                            selected = state.gradeSystem == system,
+                            onClick = { actions.onSetGradeSystem(system) },
+                            label = { Text(system.label) },
+                        )
+                    }
+                }
+            }
+        }
+
+
         if (state.storageIssues.isNotEmpty()) {
             item {
                 Surface(color = Coral.copy(alpha = 0.14f), shape = RoundedCornerShape(14.dp)) {
@@ -173,7 +207,14 @@ fun SetupScreen(
                     if (remapping) {
                         selectedHoldId = holdId.takeIf { it != selectedHoldId }
                     } else {
-                        actions.onToggleHoldCapability(holdId)
+                        // One tap reclassifies a hold, which can break published
+                        // problems — the same check every other setup edit gets.
+                        val demoted = demotedBy(state.setup.withCapabilityToggled(holdId))
+                        if (demoted.isEmpty()) {
+                            actions.onToggleHoldCapability(holdId)
+                        } else {
+                            pendingChange = PendingSetupChange.CapabilityToggle(holdId, demoted)
+                        }
                     }
                 },
                 photoPath = state.boardPhotoPath,
@@ -202,44 +243,33 @@ fun SetupScreen(
             }
         }
 
-        item {
-            BoardPhotoCard(photo = board.photo, actions = actions)
+        // Re-map controls sit right under the board, not down in the Hold map card:
+        // they're used while dragging markers, so they have to be in view.
+        if (remapping) {
+            item {
+                RemapControls(
+                    selectedHoldId = selectedHoldId,
+                    suggesting = state.isSuggestingHolds,
+                    onSuggestHolds = actions.onSuggestHolds,
+                    onAddHold = { selectedHoldId = actions.onAddHold(0.5f, 0.5f) },
+                    onRemoveSelected = { holdId ->
+                        val demoted = demotedBy(state.setup.withHoldRemoved(holdId))
+                        if (demoted.isEmpty()) {
+                            actions.onRemoveHold(holdId)
+                            selectedHoldId = null
+                        } else {
+                            pendingChange = PendingSetupChange.HoldRemoval(holdId, demoted)
+                        }
+                    },
+                    onDone = {
+                        remapping = false
+                        selectedHoldId = null
+                    },
+                )
+            }
         }
 
-        item {
-            HoldMapCard(
-                board = board,
-                setup = state.setup,
-                remapping = remapping,
-                selectedHoldId = selectedHoldId,
-                suggesting = state.isSuggestingHolds,
-                onSuggestHolds = actions.onSuggestHolds,
-                onToggleRemapping = {
-                    remapping = !remapping
-                    selectedHoldId = null
-                },
-                onAddHold = { selectedHoldId = actions.onAddHold(0.5f, 0.5f) },
-                onRemoveSelected = { holdId ->
-                    val demoted = demotedBy(state.setup.withHoldRemoved(holdId))
-                    if (demoted.isEmpty()) {
-                        actions.onRemoveHold(holdId)
-                        selectedHoldId = null
-                    } else {
-                        pendingChange = PendingSetupChange.HoldRemoval(holdId, demoted)
-                    }
-                },
-                onUseBundled = {
-                    val demoted = demotedBy(state.setup.withBundledHolds())
-                    if (demoted.isEmpty()) {
-                        actions.onUseBundledHoldLayout()
-                        selectedHoldId = null
-                    } else {
-                        pendingChange = PendingSetupChange.BundledLayout(demoted)
-                    }
-                },
-            )
-        }
-
+        // Directly below the board too, so the boundary line it moves stays in view.
         item {
             Column(
                 modifier = Modifier
@@ -277,14 +307,10 @@ fun SetupScreen(
                 }
                 if (board.hasKickboard) {
                     Text(
-                        "Boundary · holds below default to foot-only. Tap a hold above to correct exceptions.",
+                        "Slide to move the boundary line on the board. Holds below it " +
+                            "default to foot-only; tap a hold to correct an exception.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "Y = ${"%.0f".format(boundaryDraft * 100)}%",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
                     )
                     Slider(
                         value = boundaryDraft,
@@ -303,51 +329,42 @@ fun SetupScreen(
             }
         }
 
+
         item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surface),
-            ) {
-                SetupValue("Wall angle", "Set per problem (0–90°)")
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                SetupValue("Climbing height", "${board.heightMeters} m")
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                SetupValue("Mapped holds", "${board.holds.size}")
-                if (board.setupConfirmedAt != null) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                    SetupValue("Zones", "Confirmed ✓")
-                }
-            }
+            BoardPhotoCard(photo = board.photo, actions = actions)
         }
 
         item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text("Boulder grade system", fontWeight = FontWeight.Bold)
-                Text(
-                    "Choose how problem difficulties are shown across the app. Grades are setter estimates.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GradeSystem.entries.forEach { system ->
-                        FilterChip(
-                            selected = state.gradeSystem == system,
-                            onClick = { actions.onSetGradeSystem(system) },
-                            label = { Text(system.label) },
-                        )
+            HoldMapCard(
+                board = board,
+                setup = state.setup,
+                remapping = remapping,
+                onToggleRemapping = {
+                    remapping = !remapping
+                    selectedHoldId = null
+                },
+                onUseBundled = {
+                    val demoted = demotedBy(state.setup.withBundledHolds())
+                    if (demoted.isEmpty()) {
+                        actions.onUseBundledHoldLayout()
+                        selectedHoldId = null
+                    } else {
+                        pendingChange = PendingSetupChange.BundledLayout(demoted)
                     }
-                }
+                },
+            )
+        }
+
+        item {
+            // Facts, not settings: plain text, so nothing here looks tappable.
+            Column(
+                modifier = Modifier.padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("About this board", fontWeight = FontWeight.Bold)
+                SetupFact("Wall angle is set per problem (0–90°).")
+                SetupFact("Climbing height ${board.heightMeters} m · ${board.holds.size} mapped holds.")
+                if (board.setupConfirmedAt != null) SetupFact("Zones confirmed.")
             }
         }
 
@@ -355,21 +372,6 @@ fun SetupScreen(
             CloudSyncCard(cloud = state.cloud, actions = actions)
         }
 
-        item {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp)) {
-                Row(modifier = Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
-                    Column {
-                        Text("Image-space mapping", fontWeight = FontWeight.Bold)
-                        Text(
-                            "Hold centers are stored as normalized photo coordinates, and each hold stores " +
-                                "its zone and capability. Validation reads the stored classification, not the line.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
     }
 
     state.holdSuggestion?.let { suggestion ->
@@ -451,6 +453,7 @@ fun SetupScreen(
                         when (change) {
                             is PendingSetupChange.Boundary -> actions.onSetKickboardBoundary(change.y)
                             is PendingSetupChange.Kickboard -> actions.onSetKickboardEnabled(change.enabled)
+                            is PendingSetupChange.CapabilityToggle -> actions.onToggleHoldCapability(change.holdId)
                             is PendingSetupChange.HoldRemoval -> {
                                 actions.onRemoveHold(change.holdId)
                                 selectedHoldId = null
@@ -490,6 +493,12 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
     val captureLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture(),
     ) { saved -> actions.onBoardPhotoCaptured(saved) }
+    val pickLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        // A null result is a cancelled picker, not a broken import.
+        if (uri != null) actions.onBoardPhotoImported(uri.toString())
+    }
 
     Column(
         modifier = Modifier
@@ -503,8 +512,8 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
         Text("Board photo", fontWeight = FontWeight.Bold)
         Text(
             text = if (photo == null) {
-                "Showing the photo bundled with the app. Take your own when the wall " +
-                    "or the lighting has changed."
+                "Showing the photo bundled with the app. Take or upload your own " +
+                    "when the wall or the lighting has changed."
             } else {
                 "Your photo · ${photo.widthPx} × ${photo.heightPx} · taken " +
                     DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(photo.capturedAt))
@@ -523,7 +532,7 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
             )
         }
         error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = Coral)
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
@@ -544,6 +553,22 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
                 Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (photo == null) "Take a board photo" else "Retake photo")
+            }
+            OutlinedButton(
+                onClick = {
+                    error = null
+                    runCatching {
+                        pickLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    }.onFailure {
+                        error = "No photo picker is available on this device."
+                    }
+                },
+            ) {
+                Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (photo == null) "Upload photo" else "Replace from gallery")
             }
             if (photo != null) {
                 TextButton(onClick = actions.onClearBoardPhoto) { Text("Use bundled") }
@@ -567,12 +592,7 @@ private fun HoldMapCard(
     board: ConfiguredBoard,
     setup: BoardSetup,
     remapping: Boolean,
-    selectedHoldId: String?,
-    suggesting: Boolean,
-    onSuggestHolds: () -> Unit,
     onToggleRemapping: () -> Unit,
-    onAddHold: () -> Unit,
-    onRemoveSelected: (String) -> Unit,
     onUseBundled: () -> Unit,
 ) {
     Column(
@@ -595,54 +615,9 @@ private fun HoldMapCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (remapping) {
-            Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(10.dp)) {
-                Text(
-                    "Drag each marker onto the middle of its hold. Pinch the board to " +
-                        "zoom in first, and double-tap it to zoom back out. Tap a marker " +
-                        "to select it, then remove it if that hold has come off the wall.",
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            selectedHoldId?.let { holdId ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Selected $holdId",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    TextButton(onClick = { onRemoveSelected(holdId) }) {
-                        Text("Remove $holdId", color = Coral)
-                    }
-                }
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(onClick = onSuggestHolds, enabled = !suggesting) {
-                    if (suggesting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Searching…")
-                    } else {
-                        Text("Suggest from photo")
-                    }
-                }
-                Button(onClick = onAddHold) { Text("Add hold") }
-                TextButton(onClick = onToggleRemapping) { Text("Done") }
-            }
             Text(
-                "Suggest from photo finds likely holds and snaps the markers onto them; " +
-                    "you confirm before anything moves. A hold added by hand lands in the " +
-                    "middle of the board, already selected.",
-                style = MaterialTheme.typography.labelSmall,
+                "Re-mapping now — the controls are just under the board.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
@@ -662,6 +637,77 @@ private fun HoldMapCard(
     }
 }
 
+/**
+ * Re-map mode's working controls. A drag commits as soon as the finger lifts,
+ * with no confirmation: dragging is continuous and a dialog per hold would make
+ * the job unusable, and a demotion to Needs review is reversible anyway. Removing
+ * a hold does ask first, because the problems that used it lose a hold outright.
+ */
+@Composable
+private fun RemapControls(
+    selectedHoldId: String?,
+    suggesting: Boolean,
+    onSuggestHolds: () -> Unit,
+    onAddHold: () -> Unit,
+    onRemoveSelected: (String) -> Unit,
+    onDone: () -> Unit,
+) {
+    Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(14.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Re-mapping holds", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Button(onClick = onDone) { Text("Done") }
+            }
+            Text(
+                "Drag each marker onto the middle of its hold. Pinch to zoom in, " +
+                    "double-tap to zoom back out. Tap a marker to select it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(onClick = onSuggestHolds, enabled = !suggesting) {
+                    if (suggesting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Searching…")
+                    } else {
+                        Text("Suggest from photo")
+                    }
+                }
+                OutlinedButton(onClick = onAddHold) { Text("Add hold") }
+            }
+            selectedHoldId?.let { holdId ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Selected $holdId",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    TextButton(
+                        onClick = { onRemoveSelected(holdId) },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("Remove hold") }
+                }
+            }
+            Text(
+                "Suggest from photo snaps markers onto likely holds; you confirm before " +
+                    "anything moves. An added hold lands mid-board, already selected.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 /** A Setup edit awaiting confirmation because it would demote published problems. */
 private sealed interface PendingSetupChange {
     val demoted: List<String>
@@ -669,6 +715,7 @@ private sealed interface PendingSetupChange {
     data class Boundary(val y: Float, override val demoted: List<String>) : PendingSetupChange
     data class Kickboard(val enabled: Boolean, override val demoted: List<String>) : PendingSetupChange
     data class HoldRemoval(val holdId: String, override val demoted: List<String>) : PendingSetupChange
+    data class CapabilityToggle(val holdId: String, override val demoted: List<String>) : PendingSetupChange
     data class BundledLayout(override val demoted: List<String>) : PendingSetupChange
 }
 
@@ -688,14 +735,6 @@ private fun CapabilityLegendDot(color: Color, filled: Boolean) {
 }
 
 @Composable
-private fun SetupValue(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        Text(value, fontWeight = FontWeight.Bold)
-    }
+private fun SetupFact(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

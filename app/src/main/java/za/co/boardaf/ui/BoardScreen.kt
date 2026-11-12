@@ -32,14 +32,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetValue
@@ -49,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,9 +64,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import za.co.boardaf.BoardUiState
 import za.co.boardaf.model.IssueSeverity
@@ -71,16 +77,19 @@ import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.ProblemValidator
 import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.SetterMode
-import za.co.boardaf.ui.theme.Coral
 import za.co.boardaf.ui.theme.Forest
 import kotlinx.coroutines.launch
 import za.co.boardaf.ui.theme.Moss
+import za.co.boardaf.ui.theme.Coral
+
+/** The board sheet's resting height while viewing a problem. */
+private val BOARD_SHEET_PEEK_HEIGHT = 100.dp
 
 /**
- * The board sheet's resting height. Shared with [BoardAfApp] so the snackbar can
- * be lifted clear of the peek instead of covering it.
+ * Height of [SheetHandle]. The setter's peek is this plus the measured strip, so
+ * the strip shows in full at any font scale.
  */
-internal val BOARD_SHEET_PEEK_HEIGHT = 100.dp
+private val SHEET_HANDLE_HEIGHT = 24.dp
 
 internal fun problemDisplayName(name: String): String = name.ifBlank { "Untitled draft" }
 
@@ -122,7 +131,7 @@ fun BoardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     item {
-                        BoardHeader(state = state, problem = problem)
+                        if (!state.isSetting) BoardHeader(state = state, actions = actions, problem = problem)
                         SwipeableBoard(
                             enabled = !state.isSetting,
                             onSwipe = actions.onSelectAdjacentProblem,
@@ -156,37 +165,84 @@ fun BoardScreen(
                 skipHiddenState = true,
             )
             val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
+            val scope = rememberCoroutineScope()
+            val density = LocalDensity.current
+            var stripHeight by remember { mutableStateOf(0.dp) }
+            val peekHeight: Dp = if (state.isSetting && stripHeight > 0.dp) {
+                SHEET_HANDLE_HEIGHT + stripHeight
+            } else {
+                BOARD_SHEET_PEEK_HEIGHT
+            }
+
+            // The sheet follows the step: open for the steps that are all form
+            // (feet rule, details), down to the strip for the steps where the board
+            // is what you're working on, and down when the session ends so the
+            // saved problem isn't hidden behind it.
+            val wantExpanded = state.isSetting &&
+                state.setter.mode == SetterMode.GUIDED &&
+                state.setter.guidedStep.roleForStep == null
+            LaunchedEffect(state.isSetting, state.setter.mode, state.setter.guidedStep) {
+                if (wantExpanded) sheetState.expand() else sheetState.partialExpand()
+            }
+
             BottomSheetScaffold(
                 scaffoldState = scaffoldState,
-                sheetPeekHeight = BOARD_SHEET_PEEK_HEIGHT,
+                sheetPeekHeight = peekHeight,
                 sheetContainerColor = MaterialTheme.colorScheme.surface,
+                sheetDragHandle = { SheetHandle() },
                 sheetContent = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 14.dp)
-                            .padding(bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        if (state.isSetting) {
-                            SetterPanel(state = state, actions = actions)
-                        } else if (problem != null) {
-                            FeetRuleBanner(
-                                feetRule = problem.feetRule,
-                                footMarkCount = problem.assignments.count { it.role == ProblemHoldRole.FOOT_ONLY },
-                            )
-                            ProblemDetails(
-                                problem = problem,
+                    if (state.isSetting) {
+                        val chrome = rememberSetterChromeState()
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Outside the scroll so it can't be scrolled out of the peek.
+                            SetterStrip(
                                 state = state,
                                 actions = actions,
+                                chrome = chrome,
+                                onShowDetails = { scope.launch { sheetState.expand() } },
+                                modifier = Modifier
+                                    .onSizeChanged { stripHeight = with(density) { it.height.toDp() } }
+                                    .padding(horizontal = 14.dp)
+                                    .padding(bottom = 10.dp),
                             )
-                        } else {
-                            Text(
-                                "No problem selected. Open the library or tap + to set one.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 24.dp),
-                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = 14.dp)
+                                    .padding(top = 12.dp, bottom = 24.dp),
+                            ) {
+                                SetterBody(state = state, actions = actions, chrome = chrome)
+                            }
+                        }
+                        SetterDialogs(state = state, actions = actions, chrome = chrome)
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 14.dp)
+                                .padding(bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            if (problem != null) {
+                                FeetRuleBanner(
+                                    feetRule = problem.feetRule,
+                                    footMarkCount = problem.assignments.count { it.role == ProblemHoldRole.FOOT_ONLY },
+                                )
+                                ProblemDetails(
+                                    problem = problem,
+                                    state = state,
+                                    actions = actions,
+                                )
+                            } else {
+                                Text(
+                                    "No problem selected. Open the library or tap + to set one.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 24.dp),
+                                )
+                            }
                         }
                     }
                 },
@@ -203,7 +259,9 @@ fun BoardScreen(
                         .padding(horizontal = 14.dp)
                         .padding(top = 14.dp),
                 ) {
-                    BoardHeader(state = state, problem = problem)
+                    // While setting, the sheet's strip names the step; a second
+                    // header up here only pushed the board down.
+                    if (!state.isSetting) BoardHeader(state = state, actions = actions, problem = problem)
                     SwipeableBoard(
                         enabled = !state.isSetting,
                         onSwipe = actions.onSelectAdjacentProblem,
@@ -284,6 +342,24 @@ private fun AnimatedProblemSurface(
 
 private const val SETTER_SURFACE_KEY = "setter-session"
 
+/**
+ * A slimmer drag handle than Material's 48dp one, which ate a third of the setter's
+ * peek. The sheet still drags from anywhere on it, and the scaffold attaches the
+ * expand/collapse accessibility actions to this slot whatever it draws.
+ */
+@Composable
+private fun SheetHandle() {
+    Box(
+        modifier = Modifier
+            .padding(vertical = 10.dp)
+            .size(width = 32.dp, height = 4.dp)
+            .background(
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                RoundedCornerShape(2.dp),
+            ),
+    )
+}
+
 @Composable
 private fun SwipeableBoard(
     enabled: Boolean,
@@ -352,65 +428,81 @@ private fun SidePanel(state: BoardUiState, actions: BoardActions, problem: Probl
 }
 
 @Composable
-private fun BoardHeader(state: BoardUiState, problem: Problem?) {
-    val issues = if (!state.isSetting && problem != null) {
-        ProblemValidator.validate(problem, state.board)
-    } else {
-        emptyList()
-    }
+private fun BoardHeader(state: BoardUiState, actions: BoardActions, problem: Problem?) {
+    val issues = if (problem != null) ProblemValidator.validate(problem, state.board) else emptyList()
     val repairReason = issues
         .filter { it.severity == IssueSeverity.ERROR }
         .firstOrNull()
         ?.message
+    // Same listing the swipe walks, so the position and the arrows agree with it.
+    val listed = state.visibleProblems
+    val index = listed.indexOfFirst { it.id == problem?.id }
+    val showPosition = index >= 0 && listed.size > 1
 
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp),
-        verticalAlignment = Alignment.Bottom,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (state.isSetting) "ROUTE SETTER" else "NOW VIEWING",
+                text = if (showPosition) "NOW VIEWING · ${index + 1} OF ${listed.size}" else "NOW VIEWING",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text = if (state.isSetting) {
-                    state.setter.draft.name.ifBlank { "Choose your holds" }
-                } else {
-                    problemDisplayName(problem?.name.orEmpty())
-                },
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (!state.isSetting &&
-                problem?.publicationState == PublicationState.NEEDS_REVIEW &&
-                repairReason != null
-            ) {
-                Text(
-                    text = repairReason,
-                    color = Coral,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+            // The swipe has no other visible cue; these make it discoverable and
+            // give a tap alternative to it.
+            if (showPosition) {
+                IconButton(
+                    onClick = { actions.onSelectAdjacentProblem(-1) },
+                    enabled = index > 0,
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, contentDescription = "Previous problem")
+                }
+                IconButton(
+                    onClick = { actions.onSelectAdjacentProblem(1) },
+                    enabled = index < listed.lastIndex,
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Next problem")
+                }
             }
         }
-        if (!state.isSetting && problem != null) {
-            StatusChip(state = problem.publicationState)
-            Spacer(Modifier.width(8.dp))
-            Surface(color = MaterialTheme.colorScheme.inverseSurface, shape = RoundedCornerShape(8.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${problem.grade.label(state.gradeSystem)} · ${problem.angleDegrees}°",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                    text = problemDisplayName(problem?.name.orEmpty()),
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (problem?.publicationState == PublicationState.NEEDS_REVIEW && repairReason != null) {
+                    Text(
+                        text = repairReason,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+            if (problem != null) {
+                // Published is the normal case; only the exceptions get a chip.
+                if (problem.publicationState != PublicationState.PUBLISHED) {
+                    StatusChip(state = problem.publicationState)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Surface(color = MaterialTheme.colorScheme.inverseSurface, shape = RoundedCornerShape(8.dp)) {
+                    Text(
+                        text = "${problem.grade.label(state.gradeSystem)} · ${problem.angleDegrees}°",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
@@ -442,6 +534,11 @@ fun StatusChip(state: PublicationState, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * The rest of what a climber needs below the header — rules, legend, repair notes —
+ * and the actions, weighted: one filled primary, at most one outlined secondary,
+ * and the housekeeping (duplicate, archive, delete) as quiet text buttons.
+ */
 @Composable
 private fun ProblemDetails(
     problem: Problem,
@@ -451,149 +548,115 @@ private fun ProblemDetails(
     val issues = ProblemValidator.validate(problem, state.board)
     val hasErrors = ProblemValidator.hasErrors(issues)
     var confirmForerun by rememberSaveable(problem.id) { mutableStateOf(false) }
-    var confirmDelete by rememberSaveable(problem.id) { mutableStateOf(false) }
     val needsRepair = problem.publicationState == PublicationState.NEEDS_REVIEW
     val displayName = problemDisplayName(problem.name)
+    val primaryColors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White)
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder(),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(11.dp)
-                        .background(problem.accent.color(), CircleShape),
-                )
-                Spacer(Modifier.width(9.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "${problem.grade.label(state.gradeSystem)} at ${problem.angleDegrees}° · " +
-                            "${holdCountLabel(problem.assignments.size)} · ${problem.setter}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                StatusChip(state = problem.publicationState)
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Name, grade and status are already in the header right above.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(11.dp)
+                    .background(problem.accent.color(), CircleShape),
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                text = "${holdCountLabel(problem.assignments.size)} · set by ${problem.setter}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
 
-            if (needsRepair) {
-                val repairErrors = issues.filter { it.severity == IssueSeverity.ERROR }
-                Surface(color = Coral.copy(alpha = 0.14f), shape = RoundedCornerShape(10.dp)) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (repairErrors.isEmpty()) {
-                            Text(
-                                text = "The board changed while this was published. Confirm it still climbs as set, then publish again.",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        } else {
-                            Text(
-                                text = "This problem needs repair before it can be published again:",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            repairErrors.forEach {
-                                Text("• ${it.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+        // The setter sees these rules while setting; the climber needs them more.
+        StartFinishExplanation(startRule = problem.startRule, finishRule = problem.finishRule)
+
+        if (needsRepair) {
+            val repairErrors = issues.filter { it.severity == IssueSeverity.ERROR }
+            Surface(color = Coral.copy(alpha = 0.14f), shape = RoundedCornerShape(10.dp)) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (repairErrors.isEmpty()) {
+                        Text(
+                            text = "The board changed while this was published. Confirm it still climbs as set, then publish again.",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    } else {
+                        Text(
+                            text = "This problem needs repair before it can be published again:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        repairErrors.forEach {
+                            Text("• ${it.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             }
+        }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-            MarkerLegend()
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        MarkerLegend()
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
-            if (needsRepair) {
-                Button(
-                    onClick = { actions.onStartEditing(problem.id) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
-                ) {
-                    Text("Repair")
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { actions.onDuplicateProblem(problem.id) },
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when {
+                needsRepair -> {
+                    Button(
+                        onClick = { actions.onStartEditing(problem.id) },
                         modifier = Modifier.weight(1f),
-                    ) { Text("Duplicate") }
+                        colors = primaryColors,
+                    ) { Text("Repair") }
+                    if (!hasErrors) {
+                        OutlinedButton(
+                            onClick = { confirmForerun = true },
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Publish…") }
+                    }
+                }
+                problem.publicationState == PublicationState.ARCHIVED -> {
+                    Button(
+                        onClick = { actions.onUnarchiveProblem(problem.id) },
+                        modifier = Modifier.weight(1f),
+                        colors = primaryColors,
+                    ) { Text("Restore") }
+                    OutlinedButton(
+                        onClick = { actions.onStartEditing(problem.id) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Edit") }
+                }
+                problem.publicationState == PublicationState.DRAFT -> {
+                    Button(
+                        onClick = { actions.onStartEditing(problem.id) },
+                        modifier = Modifier.weight(1f),
+                        colors = primaryColors,
+                    ) { Text("Edit") }
                     OutlinedButton(
                         onClick = { confirmForerun = true },
                         enabled = !hasErrors,
                         modifier = Modifier.weight(1f),
                     ) { Text("Publish…") }
                 }
-                TextButton(
-                    onClick = { actions.onArchiveProblem(problem.id) },
-                    modifier = Modifier.align(Alignment.End),
-                ) { Text("Archive") }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { actions.onStartEditing(problem.id) },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Edit") }
-                    OutlinedButton(
-                        onClick = { actions.onDuplicateProblem(problem.id) },
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Duplicate") }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when (problem.publicationState) {
-                        PublicationState.DRAFT -> {
-                            OutlinedButton(
-                                onClick = { confirmForerun = true },
-                                enabled = !hasErrors,
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Publish…") }
-                        }
-                        PublicationState.PUBLISHED -> {
-                            OutlinedButton(
-                                onClick = { confirmDelete = true },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error,
-                                ),
-                            ) { Text("Delete") }
-                        }
-                        PublicationState.ARCHIVED -> {
-                            OutlinedButton(
-                                onClick = { actions.onUnarchiveProblem(problem.id) },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Restore") }
-                        }
-                        PublicationState.NEEDS_REVIEW -> Unit
-                    }
-                    if (problem.publicationState != PublicationState.ARCHIVED) {
-                        OutlinedButton(
-                            onClick = { actions.onArchiveProblem(problem.id) },
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Archive") }
-                    }
-                }
+                else -> Button(
+                    onClick = { actions.onStartEditing(problem.id) },
+                    modifier = Modifier.weight(1f),
+                    colors = primaryColors,
+                ) { Text("Edit") }
             }
+        }
 
-            // Published problems already carry Delete in the action row above.
-            if (needsRepair || problem.publicationState != PublicationState.PUBLISHED) {
-                TextButton(
-                    onClick = { confirmDelete = true },
-                    modifier = Modifier.align(Alignment.End),
-                ) { Text("Delete") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { actions.onDuplicateProblem(problem.id) }) { Text("Duplicate") }
+            if (problem.publicationState != PublicationState.ARCHIVED) {
+                TextButton(onClick = { actions.onArchiveProblem(problem.id) }) { Text("Archive") }
             }
+            Spacer(Modifier.weight(1f))
+            // No confirm dialog: the delete is recoverable, and the snackbar offers Undo.
+            TextButton(
+                onClick = { actions.onDeleteProblem(problem.id) },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Delete") }
         }
     }
 
@@ -617,27 +680,6 @@ private fun ProblemDetails(
             },
             dismissButton = {
                 TextButton(onClick = { confirmForerun = false }) { Text("Not yet") }
-            },
-        )
-    }
-
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete problem?") },
-            text = {
-                Text("“$displayName” will be permanently removed. This cannot be undone.")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-                        actions.onDeleteProblem(problem.id)
-                    },
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
             },
         )
     }

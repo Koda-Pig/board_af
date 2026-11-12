@@ -23,6 +23,7 @@ import za.co.boardaf.data.DeletedProblem
 import za.co.boardaf.data.DeletedProblems
 import za.co.boardaf.data.LibrarySnapshot
 import za.co.boardaf.data.SnapshotCodec
+import za.co.boardaf.model.BoardPhoto
 import za.co.boardaf.data.StorageIssue
 import za.co.boardaf.data.UnreadableRecord
 import za.co.boardaf.data.VersionedBoardStore
@@ -124,10 +125,15 @@ sealed interface BoardEvent {
          * state it held before it was archived — not a recomputed one.
          */
         val undoArchive: ArchiveUndo? = null,
+        /** When set, the snackbar action puts this deleted problem back. */
+        val undoDelete: DeleteUndo? = null,
     ) : BoardEvent
 
     /** Everything needed to put an archived problem back the way it was. */
     data class ArchiveUndo(val problemId: String, val previousState: PublicationState)
+
+    /** A delete to reverse: the recovery record's id, and whether it was on the board. */
+    data class DeleteUndo(val problemId: String, val wasSelected: Boolean)
 }
 
 class BoardViewModel @JvmOverloads constructor(
@@ -333,11 +339,23 @@ class BoardViewModel @JvmOverloads constructor(
             },
         )
         persist()
+        // Undo rather than a confirm dialog, the same as archive: the delete is
+        // recoverable either way, so asking first only adds a step.
         emit(
             BoardEvent.Message(
                 "Deleted ${deleted.name.ifBlank { "Untitled draft" }} — recoverable from Recently deleted.",
+                actionLabel = "Undo",
+                undoDelete = BoardEvent.DeleteUndo(problemId, current.selectedProblemId == problemId),
             ),
         )
+    }
+
+    /** Snackbar Undo for [deleteProblem]: restore, and put it back on the board if it was there. */
+    fun undoDelete(undo: BoardEvent.DeleteUndo) {
+        val restoredId = restoreDeletedProblem(undo.problemId, announce = false) ?: return
+        if (undo.wasSelected) {
+            mutableState.value = mutableState.value.copy(selectedProblemId = restoredId)
+        }
     }
 
     /**
@@ -347,8 +365,13 @@ class BoardViewModel @JvmOverloads constructor(
      * The tombstone therefore stays; only the payload leaves the recovery list.
      */
     fun restoreDeletedProblem(problemId: String) {
+        restoreDeletedProblem(problemId, announce = true)
+    }
+
+    /** Returns the restored problem's new id, or null when there was nothing to restore. */
+    private fun restoreDeletedProblem(problemId: String, announce: Boolean): String? {
         val current = mutableState.value
-        val record = current.deletedProblems.firstOrNull { it.problem.id == problemId } ?: return
+        val record = current.deletedProblems.firstOrNull { it.problem.id == problemId } ?: return null
         val id = newProblemId(record.problem.name)
         // Restored long after the fact, so the state is recomputed rather than
         // taken at face value: the board may have been reconfigured since.
@@ -362,7 +385,8 @@ class BoardViewModel @JvmOverloads constructor(
             deletedProblems = current.deletedProblems.filterNot { it.problem.id == problemId },
         )
         persist()
-        emit(BoardEvent.Message("${restored.name.ifBlank { "Untitled draft" }} restored."))
+        if (announce) emit(BoardEvent.Message("${restored.name.ifBlank { "Untitled draft" }} restored."))
+        return id
     }
 
     /**
@@ -744,7 +768,22 @@ class BoardViewModel @JvmOverloads constructor(
             store.delete(fileName)
             return
         }
-        val photo = store.adopt(fileName)
+        adoptBoardPhoto(store, store.adopt(fileName))
+    }
+
+    /**
+     * Make a photo chosen from the picker the board photo. Unlike the camera's
+     * two-step handshake there is nothing pending: the store copies and normalizes
+     * the source in one call, so the only two outcomes are a new board photo or
+     * an untouched one.
+     */
+    fun importBoardPhoto(uriString: String) {
+        val store = photoStore ?: return
+        adoptBoardPhoto(store, store.importFrom(uriString))
+    }
+
+    /** Shared tail of capture and import: swap the photo in, then retire the old file. */
+    private fun adoptBoardPhoto(store: BoardPhotoStore, photo: BoardPhoto?) {
         if (photo == null) {
             emit(BoardEvent.Message("That photo couldn't be read. The board is unchanged."))
             return
