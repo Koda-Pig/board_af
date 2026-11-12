@@ -238,14 +238,15 @@ private fun AnimatedProblemSurface(
     activeAssignments: List<za.co.boardaf.model.ProblemAssignment>,
     holdsEnabled: Boolean,
 ) {
-    val activeProblems = state.problems.filter { it.publicationState != PublicationState.ARCHIVED }
+    // Same listing the swipe itself walks, so the slide direction matches the move.
+    val listedProblems = state.visibleProblems
     val activeKey = if (state.isSetting) SETTER_SURFACE_KEY else state.selectedProblem?.id ?: "none"
 
     AnimatedContent(
         targetState = activeKey,
         transitionSpec = {
-            val from = activeProblems.indexOfFirst { it.id == initialState }
-            val to = activeProblems.indexOfFirst { it.id == targetState }
+            val from = listedProblems.indexOfFirst { it.id == initialState }
+            val to = listedProblems.indexOfFirst { it.id == targetState }
             val direction = if (from >= 0 && to >= 0 && from != to) {
                 if (to > from) 1 else -1
             } else {

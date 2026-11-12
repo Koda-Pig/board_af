@@ -24,11 +24,14 @@ import za.co.boardaf.data.LibrarySnapshot
 import za.co.boardaf.model.Accent
 import za.co.boardaf.model.BoardSetup
 import za.co.boardaf.model.BoulderGrade
+import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.ProblemAssignment
 import za.co.boardaf.model.ProblemHoldRole
 import za.co.boardaf.model.PublicationState
 import za.co.boardaf.setter.GuidedStep
+import za.co.boardaf.ui.ProblemLibraryQuery
+import za.co.boardaf.ui.ProblemSort
 
 /**
  * Coordination tests for [BoardViewModel]: selection, archive/undo, delete
@@ -127,6 +130,89 @@ class BoardViewModelTest {
         vm.selectAdjacentProblem(1)
 
         assertEquals("c", vm.state.value.selectedProblemId)
+    }
+
+    @Test
+    fun `selectAdjacentProblem follows the library sort`() = runTest {
+        // Library order is a, b, c; "Name Z-A" lists them c, b, a.
+        val store = FakeStore(snapshotOf(problem("a"), problem("b"), problem("c")))
+        val vm = viewModel(store)
+        vm.setLibraryQuery(ProblemLibraryQuery(sort = ProblemSort.NAME_DESC))
+        vm.selectProblem("c")
+
+        vm.selectAdjacentProblem(1)
+        assertEquals("b", vm.state.value.selectedProblemId)
+
+        vm.selectAdjacentProblem(1)
+        assertEquals("a", vm.state.value.selectedProblemId)
+
+        // The end of the sorted list, not of the library.
+        vm.selectAdjacentProblem(1)
+        assertEquals("a", vm.state.value.selectedProblemId)
+    }
+
+    @Test
+    fun `selectAdjacentProblem skips problems the library filters out`() = runTest {
+        val store = FakeStore(
+            snapshotOf(
+                problem("a", state = PublicationState.PUBLISHED),
+                problem("draft", state = PublicationState.DRAFT),
+                problem("c", state = PublicationState.PUBLISHED),
+            ),
+        )
+        val vm = viewModel(store)
+        vm.setLibraryQuery(
+            ProblemLibraryQuery(status = PublicationState.PUBLISHED.label),
+        )
+
+        vm.selectAdjacentProblem(1)
+
+        assertEquals("c", vm.state.value.selectedProblemId)
+    }
+
+    @Test
+    fun `selectAdjacentProblem honours the search text`() = runTest {
+        val store = FakeStore(
+            snapshotOf(problem("a", name = "Crimp"), problem("b", name = "Sloper"), problem("c", name = "Crimpy")),
+        )
+        val vm = viewModel(store)
+        vm.setLibraryQuery(ProblemLibraryQuery(text = "crimp"))
+
+        vm.selectAdjacentProblem(1)
+
+        assertEquals("c", vm.state.value.selectedProblemId)
+    }
+
+    @Test
+    fun `selectAdjacentProblem enters the listing when the selection is filtered out`() = runTest {
+        val store = FakeStore(
+            snapshotOf(problem("a", name = "Crimp"), problem("b", name = "Sloper"), problem("c", name = "Slab")),
+        )
+        val vm = viewModel(store)
+        // "a" stays selected while the listing shows only b and c.
+        vm.setLibraryQuery(ProblemLibraryQuery(text = "sl"))
+        assertEquals("a", vm.state.value.selectedProblemId)
+
+        vm.selectAdjacentProblem(1)
+        assertEquals("b", vm.state.value.selectedProblemId)
+
+        vm.selectProblem("a")
+        vm.selectAdjacentProblem(-1)
+        assertEquals("c", vm.state.value.selectedProblemId)
+    }
+
+    @Test
+    fun `changing grade system clears a grade filter labelled in the old one`() = runTest {
+        val store = FakeStore(snapshotOf(problem("a")))
+        val vm = viewModel(store)
+        vm.setLibraryQuery(
+            ProblemLibraryQuery(grade = BoulderGrade.F6A.label(vm.state.value.gradeSystem)),
+        )
+
+        vm.setGradeSystem(GradeSystem.V_SCALE)
+
+        assertEquals(ProblemLibraryQuery.ANY, vm.state.value.library.grade)
+        assertEquals(listOf("a"), vm.state.value.visibleProblems.map { it.id })
     }
 
     @Test

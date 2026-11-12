@@ -70,8 +70,8 @@ import za.co.boardaf.model.FeetRule
 import za.co.boardaf.model.Problem
 import za.co.boardaf.model.PublicationState
 
-private const val ACTIVE = "Active"
-private const val ALL = "All"
+private val ACTIVE = ProblemLibraryQuery.STATUS_ACTIVE
+private val ALL = ProblemLibraryQuery.ANY
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -82,15 +82,12 @@ fun ProblemsScreen(
     onOpenProblem: (String) -> Unit,
     onEditProblem: (String) -> Unit,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
+    // The listing is shared state, not screen state: the board swipes through the
+    // very same filtered, sorted list, so both read it from BoardUiState.
+    val library = state.library
+    val query = library.text
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     var sortOpen by rememberSaveable { mutableStateOf(false) }
-    var sort by rememberSaveable { mutableStateOf(ProblemSort.DEFAULT) }
-    var statusFilter by rememberSaveable { mutableStateOf(ACTIVE) }
-    var gradeFilter by rememberSaveable(state.gradeSystem) { mutableStateOf(ALL) }
-    var angleFilter by rememberSaveable { mutableStateOf(ALL) }
-    var feetFilter by rememberSaveable { mutableStateOf(ALL) }
-    var setterFilter by rememberSaveable { mutableStateOf(ALL) }
     var deletedOpen by rememberSaveable { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
@@ -106,34 +103,18 @@ fun ProblemsScreen(
 
     val statusOptions = listOf(ACTIVE, ALL) + PublicationState.entries.map { it.label }
 
-    val matching = state.problems.filter { problem ->
-        val statusOk = when (statusFilter) {
-            ACTIVE -> problem.publicationState != PublicationState.ARCHIVED
-            ALL -> true
-            else -> problem.publicationState.label == statusFilter
+    val visibleProblems = state.visibleProblems
+    val filtering = library.isFiltering
+
+    val activeFilterChips = buildList<Pair<String, () -> Unit>> {
+        fun chip(label: String, cleared: ProblemLibraryQuery) {
+            add(label to { actions.onLibraryQueryChange(cleared) })
         }
-        statusOk &&
-            (gradeFilter == ALL || problem.grade.label(state.gradeSystem) == gradeFilter) &&
-            (angleFilter == ALL || "${problem.angleDegrees}°" == angleFilter) &&
-            (feetFilter == ALL || problem.feetRule.label == feetFilter) &&
-            (setterFilter == ALL || problem.setter == setterFilter) &&
-            problemDisplayName(problem.name).contains(query, ignoreCase = true)
-    }
-    val visibleProblems = sortProblems(matching, sort)
-
-    val filtering = statusFilter != ACTIVE ||
-        gradeFilter != ALL ||
-        angleFilter != ALL ||
-        feetFilter != ALL ||
-        setterFilter != ALL ||
-        query.isNotBlank()
-
-    val activeFilterChips = buildList {
-        if (statusFilter != ACTIVE) add("Status: $statusFilter" to { statusFilter = ACTIVE })
-        if (gradeFilter != ALL) add("Grade: $gradeFilter" to { gradeFilter = ALL })
-        if (angleFilter != ALL) add("Angle: $angleFilter" to { angleFilter = ALL })
-        if (feetFilter != ALL) add("Feet: $feetFilter" to { feetFilter = ALL })
-        if (setterFilter != ALL) add("Setter: $setterFilter" to { setterFilter = ALL })
+        if (library.status != ACTIVE) chip("Status: ${library.status}", library.copy(status = ACTIVE))
+        if (library.grade != ALL) chip("Grade: ${library.grade}", library.copy(grade = ALL))
+        if (library.angle != ALL) chip("Angle: ${library.angle}", library.copy(angle = ALL))
+        if (library.feetRule != ALL) chip("Feet: ${library.feetRule}", library.copy(feetRule = ALL))
+        if (library.setter != ALL) chip("Setter: ${library.setter}", library.copy(setter = ALL))
     }
 
     LazyColumn(
@@ -162,13 +143,13 @@ fun ProblemsScreen(
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = { actions.onLibraryQueryChange(library.copy(text = it)) },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Find a problem") },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotBlank()) {
-                        IconButton(onClick = { query = "" }) {
+                        IconButton(onClick = { actions.onLibraryQueryChange(library.copy(text = "")) }) {
                             Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
                         }
                     }
@@ -191,18 +172,18 @@ fun ProblemsScreen(
                     TextButton(onClick = { sortOpen = true }) {
                         Icon(Icons.Rounded.SwapVert, contentDescription = "Sort", modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(sort.label)
+                        Text(library.sort.label)
                     }
                     DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
                         ProblemSort.entries.forEach { option ->
                             DropdownMenuItem(
                                 text = { Text(option.label) },
                                 onClick = {
-                                    sort = option
+                                    actions.onLibraryQueryChange(library.copy(sort = option))
                                     sortOpen = false
                                 },
                                 trailingIcon = {
-                                    if (option == sort) {
+                                    if (option == library.sort) {
                                         Icon(Icons.Rounded.Check, contentDescription = "Selected")
                                     }
                                 },
@@ -303,35 +284,35 @@ fun ProblemsScreen(
                 FilterSection(
                     title = "Status",
                     options = statusOptions,
-                    selected = statusFilter,
-                    onSelect = { statusFilter = it },
+                    selected = library.status,
+                    onSelect = { actions.onLibraryQueryChange(library.copy(status = it)) },
                 )
                 FilterSection(
                     title = "Grade",
                     options = listOf(ALL) + BoulderGrade.options(state.gradeSystem).map { it.label(state.gradeSystem) },
-                    selected = gradeFilter,
-                    onSelect = { gradeFilter = it },
+                    selected = library.grade,
+                    onSelect = { actions.onLibraryQueryChange(library.copy(grade = it)) },
                 )
                 if (angles.size > 1) {
                     FilterSection(
                         title = "Angle",
-                        options = listOf(ALL) + angles.map { "$it°" },
-                        selected = angleFilter,
-                        onSelect = { angleFilter = it },
+                        options = listOf(ALL) + angles.map { ProblemLibraryQuery.angleLabel(it) },
+                        selected = library.angle,
+                        onSelect = { actions.onLibraryQueryChange(library.copy(angle = it)) },
                     )
                 }
                 FilterSection(
                     title = "Feet rule",
                     options = listOf(ALL) + FeetRule.entries.map { it.label },
-                    selected = feetFilter,
-                    onSelect = { feetFilter = it },
+                    selected = library.feetRule,
+                    onSelect = { actions.onLibraryQueryChange(library.copy(feetRule = it)) },
                 )
                 if (setters.size > 1) {
                     FilterSection(
                         title = "Setter",
                         options = listOf(ALL) + setters,
-                        selected = setterFilter,
-                        onSelect = { setterFilter = it },
+                        selected = library.setter,
+                        onSelect = { actions.onLibraryQueryChange(library.copy(setter = it)) },
                     )
                 }
                 Row(
@@ -339,13 +320,7 @@ fun ProblemsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(
-                        onClick = {
-                            statusFilter = ACTIVE
-                            gradeFilter = ALL
-                            angleFilter = ALL
-                            feetFilter = ALL
-                            setterFilter = ALL
-                        },
+                        onClick = { actions.onLibraryQueryChange(library.cleared()) },
                         enabled = activeFilterChips.isNotEmpty(),
                     ) { Text("Clear all") }
                     Spacer(Modifier.weight(1f))

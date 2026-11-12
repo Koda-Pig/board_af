@@ -42,6 +42,7 @@ import za.co.boardaf.setter.SetterMode
 import za.co.boardaf.setter.SetterReducer
 import za.co.boardaf.setter.SetterState
 import za.co.boardaf.setter.TapRejection
+import za.co.boardaf.ui.ProblemLibraryQuery
 
 data class BoardUiState(
     val isLoading: Boolean = false,
@@ -60,6 +61,11 @@ data class BoardUiState(
     val deletedProblems: List<DeletedProblem> = emptyList(),
     /** Absolute path of the setter's board photo, or null to render the bundled one. */
     val boardPhotoPath: String? = null,
+    /**
+     * What the problem library is currently listing. Shared state, not screen
+     * state, because the board swipes through exactly this list.
+     */
+    val library: ProblemLibraryQuery = ProblemLibraryQuery(),
     val cloud: CloudSyncState = CloudSyncState(),
 ) {
     val board: ConfiguredBoard
@@ -69,6 +75,10 @@ data class BoardUiState(
         get() = ConfiguredBoard.from(setup).let { configured ->
             if (boardPhotoPath == null) configured.copy(photo = null) else configured
         }
+
+    /** The problems the library lists right now, filtered and ordered as shown. */
+    val visibleProblems: List<Problem>
+        get() = library.visible(problems, gradeSystem)
 
     val selectedProblem: Problem?
         get() = problems.firstOrNull { it.id == selectedProblemId }
@@ -200,20 +210,35 @@ class BoardViewModel @JvmOverloads constructor(
         )
     }
 
-    /** Swipe between active (non-archived) problems while viewing. */
+    fun setLibraryQuery(query: ProblemLibraryQuery) {
+        mutableState.value = mutableState.value.copy(library = query)
+    }
+
+    /**
+     * Swipe between problems while viewing, through the library's own listing —
+     * the same filters and ordering the Problems screen is showing. Walking the
+     * raw library instead would swipe into problems the filters hide and ignore
+     * the chosen sort, which is what a swipe is for.
+     */
     fun selectAdjacentProblem(delta: Int) {
         val current = mutableState.value
         if (current.isSetting) return
-        val active = current.problems.filter { it.publicationState != PublicationState.ARCHIVED }
-        if (active.size < 2) return
+        val listed = current.visibleProblems
+        if (listed.size < 2) return
         val selectedId = current.selectedProblem?.id ?: return
-        val index = active.indexOfFirst { it.id == selectedId }
-        if (index < 0) return
-        // Clamped, not wrapped: silently jumping from the last problem back to the
-        // first reads as a bug when you can't see the whole list.
-        val target = index + delta
-        if (target !in active.indices) return
-        mutableState.value = current.copy(selectedProblemId = active[target].id)
+        val index = listed.indexOfFirst { it.id == selectedId }
+        val target = if (index < 0) {
+            // The selection sits outside the listing — the filters changed, or the
+            // problem was archived while open. Enter the list from the end the
+            // swipe came from rather than refusing to move at all.
+            if (delta > 0) 0 else listed.lastIndex
+        } else {
+            // Clamped, not wrapped: silently jumping from the last problem back to
+            // the first reads as a bug when you can't see the whole list.
+            index + delta
+        }
+        if (target !in listed.indices) return
+        mutableState.value = current.copy(selectedProblemId = listed[target].id)
     }
 
     fun archiveProblem(problemId: String) {
@@ -568,7 +593,14 @@ class BoardViewModel @JvmOverloads constructor(
     }
 
     fun setGradeSystem(gradeSystem: GradeSystem) {
-        mutableState.value = mutableState.value.copy(gradeSystem = gradeSystem)
+        val current = mutableState.value
+        mutableState.value = current.copy(
+            gradeSystem = gradeSystem,
+            // The grade filter holds a label from the outgoing system ("V3"), which
+            // matches nothing once grades are relabelled — the library would read as
+            // empty with no obvious way back.
+            library = current.library.copy(grade = ProblemLibraryQuery.ANY),
+        )
         persist()
     }
 

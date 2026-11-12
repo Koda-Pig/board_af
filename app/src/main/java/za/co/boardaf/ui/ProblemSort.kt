@@ -1,6 +1,8 @@
 package za.co.boardaf.ui
 
+import za.co.boardaf.model.GradeSystem
 import za.co.boardaf.model.Problem
+import za.co.boardaf.model.PublicationState
 
 /**
  * Orderings offered by the problem library.
@@ -65,4 +67,71 @@ private fun byText(descending: Boolean, selector: (Problem) -> String): Comparat
         String.CASE_INSENSITIVE_ORDER
     }
     return compareBy(nullsLast(order)) { problem: Problem -> selector(problem).trim().ifBlank { null } }
+}
+
+/**
+ * The listing the problem library is showing: which problems pass its filters,
+ * and in what order.
+ *
+ * This lives in `BoardUiState` rather than in `ProblemsScreen` because swiping
+ * between problems on the board has to walk the *same* list. Held only by the
+ * screen, the board fell back to raw library order and swiped straight into
+ * problems the filters were hiding.
+ *
+ * The filters are the chip labels themselves rather than typed values: the
+ * options are derived from the library (setters, angles) or from the current
+ * grade system, so a label is the only thing all five have in common.
+ */
+data class ProblemLibraryQuery(
+    val text: String = "",
+    val sort: ProblemSort = ProblemSort.DEFAULT,
+    val status: String = STATUS_ACTIVE,
+    val grade: String = ANY,
+    val angle: String = ANY,
+    val feetRule: String = ANY,
+    val setter: String = ANY,
+) {
+    /** Whether the listing is narrower than the library's default view. */
+    val isFiltering: Boolean
+        get() = status != STATUS_ACTIVE ||
+            grade != ANY ||
+            angle != ANY ||
+            feetRule != ANY ||
+            setter != ANY ||
+            text.isNotBlank()
+
+    fun matches(problem: Problem, gradeSystem: GradeSystem): Boolean {
+        val statusOk = when (status) {
+            STATUS_ACTIVE -> problem.publicationState != PublicationState.ARCHIVED
+            ANY -> true
+            else -> problem.publicationState.label == status
+        }
+        return statusOk &&
+            (grade == ANY || problem.grade.label(gradeSystem) == grade) &&
+            (angle == ANY || angleLabel(problem.angleDegrees) == angle) &&
+            (feetRule == ANY || problem.feetRule.label == feetRule) &&
+            (setter == ANY || problem.setter == setter) &&
+            problemDisplayName(problem.name).contains(text, ignoreCase = true)
+    }
+
+    /**
+     * The problems the library lists, filtered and ordered exactly as rendered.
+     * [problems] must arrive in library order (newest first), as [sortProblems] requires.
+     */
+    fun visible(problems: List<Problem>, gradeSystem: GradeSystem): List<Problem> =
+        sortProblems(problems.filter { matches(it, gradeSystem) }, sort)
+
+    /** Clears every filter but keeps the search text and the chosen ordering. */
+    fun cleared(): ProblemLibraryQuery =
+        copy(status = STATUS_ACTIVE, grade = ANY, angle = ANY, feetRule = ANY, setter = ANY)
+
+    companion object {
+        /** The "no restriction" option every filter row offers. */
+        const val ANY = "All"
+
+        /** Default status: everything that hasn't been archived. */
+        const val STATUS_ACTIVE = "Active"
+
+        fun angleLabel(degrees: Int): String = "$degrees°"
+    }
 }

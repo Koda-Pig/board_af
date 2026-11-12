@@ -67,6 +67,7 @@ import za.co.boardaf.ui.theme.Sage
 data class BoardActions(
     val onSelectProblem: (String) -> Unit = {},
     val onSelectAdjacentProblem: (Int) -> Unit = {},
+    val onLibraryQueryChange: (ProblemLibraryQuery) -> Unit = {},
     val onStartSetting: () -> Unit = {},
     val onStartEditing: (String) -> Unit = {},
     val onDuplicateProblem: (String) -> Unit = {},
@@ -138,6 +139,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         BoardActions(
             onSelectProblem = viewModel::selectProblem,
             onSelectAdjacentProblem = viewModel::selectAdjacentProblem,
+            onLibraryQueryChange = viewModel::setLibraryQuery,
             onStartSetting = viewModel::startSetting,
             onStartEditing = viewModel::startEditing,
             onDuplicateProblem = viewModel::duplicateProblem,
