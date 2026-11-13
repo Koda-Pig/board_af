@@ -115,6 +115,12 @@ fun BoardSurface(
     selectedHoldId: String? = null,
     /** Fired once per completed drag with the hold's new normalized center. */
     onHoldDragged: (String, Float, Float) -> Unit = { _, _, _ -> },
+    /**
+     * Draws the kickboard line here instead of at the board's saved boundary, so
+     * Setup's slider can show where the line is going before the drag commits.
+     * Only the line moves: hold classification still follows the saved boundary.
+     */
+    kickboardBoundaryPreview: Float? = null,
 ) {
     val assignmentsById = assignments.associateBy { it.holdId }
     var transform by rememberSaveable(mode, stateSaver = BoardTransformSaver) {
@@ -193,7 +199,7 @@ fun BoardSurface(
                 )
                 if (mode != BoardDisplayMode.VIEW && board.hasKickboard) {
                     KickboardOverlay(
-                        boundaryY = board.kickboardTopY,
+                        boundaryY = kickboardBoundaryPreview ?: board.kickboardTopY,
                         prominent = mode == BoardDisplayMode.CONFIGURE,
                     )
                 }

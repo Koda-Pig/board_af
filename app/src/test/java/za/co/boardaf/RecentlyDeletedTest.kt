@@ -134,6 +134,35 @@ class RecentlyDeletedTest {
         job.cancel()
     }
 
+    @Test
+    fun `undoing a delete puts the problem back where it was in the library`() = runTest {
+        val store = FakeStore(
+            snapshot(
+                listOf(
+                    problem("tide", name = "Tidepool"),
+                    problem("moss", name = "Moss line"),
+                    problem("chalk", name = "Chalk ghost"),
+                ),
+            ),
+        )
+        val vm = viewModel(store)
+        val events = mutableListOf<BoardEvent>()
+        val job = launchCollect(vm, events)
+
+        vm.deleteProblem("moss")
+        val undo = events.filterIsInstance<BoardEvent.Message>().single().undoDelete!!
+        vm.undoDelete(undo)
+
+        // Library order is what "Newest first" lists, so an undo that prepended
+        // the problem visibly reshuffled the library.
+        assertEquals(
+            listOf("Tidepool", "Moss line", "Chalk ghost"),
+            vm.state.value.problems.map { it.name },
+        )
+        assertTrue(vm.state.value.deletedProblems.isEmpty())
+        job.cancel()
+    }
+
     // --- Restoring -----------------------------------------------------------------
 
     @Test

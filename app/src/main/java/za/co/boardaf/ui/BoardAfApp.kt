@@ -292,9 +292,9 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             snackbarHost = {
-                // Board shows its snackbars at the top instead (below): down here they
-                // covered the setter strip and the kickboard row — the very holds a
-                // tap rejection is usually about.
+                // Board hosts its own snackbars (BoardScreen), riding just above its
+                // sheet: down here they covered the setter strip, and pinned to the top
+                // they covered the problem name and the top row of holds.
                 if (currentDestination != Destination.BOARD) {
                     SnackbarHost(hostState = snackbarHostState)
                 }
@@ -379,6 +379,7 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                                 state = state,
                                 actions = actions,
                                 contentPadding = padding,
+                                snackbarHostState = snackbarHostState,
                             )
                         }
                         composable(Destination.PROBLEMS.route) {
@@ -404,14 +405,6 @@ fun BoardAfApp(viewModel: BoardViewModel = viewModel()) {
                             )
                         }
                     }
-                }
-                if (currentDestination == Destination.BOARD) {
-                    SnackbarHost(
-                        hostState = snackbarHostState,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = padding.calculateTopPadding()),
-                    )
                 }
             }
         }

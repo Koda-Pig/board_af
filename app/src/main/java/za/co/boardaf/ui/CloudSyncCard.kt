@@ -141,6 +141,7 @@ private fun SignInForm(cloud: CloudSyncState, actions: BoardActions) {
             Text("Sign in")
         }
         OutlinedButton(
+            colors = primaryOutlinedColors(),
             onClick = { actions.onCloudCreateAccount(email, password) },
             enabled = canSubmit,
         ) {
@@ -175,7 +176,7 @@ private fun SignedInStatus(cloud: CloudSyncState, actions: BoardActions) {
         ) {
             Text("Sync now")
         }
-        OutlinedButton(onClick = actions.onCloudSignOut) {
+        OutlinedButton(colors = primaryOutlinedColors(), onClick = actions.onCloudSignOut) {
             Text("Sign out")
         }
     }

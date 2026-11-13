@@ -636,6 +636,7 @@ private fun DraftDetailsForm(state: BoardUiState, actions: BoardActions) {
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
+                colors = primaryOutlinedColors(),
                 onClick = actions.onSaveDraftAndClose,
                 enabled = draft.hasContent,
                 modifier = Modifier.weight(1f),

@@ -132,8 +132,11 @@ sealed interface BoardEvent {
     /** Everything needed to put an archived problem back the way it was. */
     data class ArchiveUndo(val problemId: String, val previousState: PublicationState)
 
-    /** A delete to reverse: the recovery record's id, and whether it was on the board. */
-    data class DeleteUndo(val problemId: String, val wasSelected: Boolean)
+    /**
+     * A delete to reverse: the recovery record's id, whether it was on the board,
+     * and where it sat in the library so Undo puts it back in the same place.
+     */
+    data class DeleteUndo(val problemId: String, val wasSelected: Boolean, val libraryIndex: Int)
 }
 
 class BoardViewModel @JvmOverloads constructor(
@@ -345,14 +348,22 @@ class BoardViewModel @JvmOverloads constructor(
             BoardEvent.Message(
                 "Deleted ${deleted.name.ifBlank { "Untitled draft" }} — recoverable from Recently deleted.",
                 actionLabel = "Undo",
-                undoDelete = BoardEvent.DeleteUndo(problemId, current.selectedProblemId == problemId),
+                undoDelete = BoardEvent.DeleteUndo(
+                    problemId = problemId,
+                    wasSelected = current.selectedProblemId == problemId,
+                    libraryIndex = current.problems.indexOfFirst { it.id == problemId },
+                ),
             ),
         )
     }
 
     /** Snackbar Undo for [deleteProblem]: restore, and put it back on the board if it was there. */
     fun undoDelete(undo: BoardEvent.DeleteUndo) {
-        val restoredId = restoreDeletedProblem(undo.problemId, announce = false) ?: return
+        val restoredId = restoreDeletedProblem(
+            undo.problemId,
+            announce = false,
+            libraryIndex = undo.libraryIndex,
+        ) ?: return
         if (undo.wasSelected) {
             mutableState.value = mutableState.value.copy(selectedProblemId = restoredId)
         }
@@ -368,8 +379,19 @@ class BoardViewModel @JvmOverloads constructor(
         restoreDeletedProblem(problemId, announce = true)
     }
 
-    /** Returns the restored problem's new id, or null when there was nothing to restore. */
-    private fun restoreDeletedProblem(problemId: String, announce: Boolean): String? {
+    /**
+     * Returns the restored problem's new id, or null when there was nothing to restore.
+     *
+     * [libraryIndex] is where the problem goes back in. A restore from Recently
+     * deleted has none and lands first, like any new arrival; an immediate Undo
+     * passes the slot the problem was deleted from, because library order is what
+     * "Newest first" shows and an undo that reshuffled the list wasn't one.
+     */
+    private fun restoreDeletedProblem(
+        problemId: String,
+        announce: Boolean,
+        libraryIndex: Int? = null,
+    ): String? {
         val current = mutableState.value
         val record = current.deletedProblems.firstOrNull { it.problem.id == problemId } ?: return null
         val id = newProblemId(record.problem.name)
@@ -381,7 +403,9 @@ class BoardViewModel @JvmOverloads constructor(
             publicationState = ProblemValidator.resolveState(record.problem.publicationState, issues),
         )
         mutableState.value = current.copy(
-            problems = listOf(restored) + current.problems,
+            problems = current.problems.toMutableList().apply {
+                add((libraryIndex ?: 0).coerceIn(0, size), restored)
+            },
             deletedProblems = current.deletedProblems.filterNot { it.problem.id == problemId },
         )
         persist()

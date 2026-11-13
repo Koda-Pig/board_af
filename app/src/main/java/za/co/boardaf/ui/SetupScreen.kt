@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -38,6 +41,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,7 +100,20 @@ fun SetupScreen(
             .map { problemDisplayName(it.name) }
     }
 
+    val showStorageIssues = state.storageIssues.isNotEmpty()
+    val showSetupHint = board.setupConfirmedAt == null && !setupHintDismissed
+    val listState = rememberLazyListState()
+    // The header and the grade card always precede the board; the two notices only
+    // sometimes do. Kept next to the conditions it mirrors, which the items below reuse.
+    val boardItemIndex = 2 + (if (showStorageIssues) 1 else 0) + (if (showSetupHint) 1 else 0)
+    // "Re-map holds" lives in the Hold map card, well below the board, so turning it
+    // on used to leave the board it applies to scrolled off the top of the screen.
+    LaunchedEffect(remapping) {
+        if (remapping) listState.animateScrollToItem(boardItemIndex)
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
@@ -138,7 +155,7 @@ fun SetupScreen(
         }
 
 
-        if (state.storageIssues.isNotEmpty()) {
+        if (showStorageIssues) {
             item {
                 Surface(color = Coral.copy(alpha = 0.14f), shape = RoundedCornerShape(14.dp)) {
                     Column(
@@ -163,7 +180,7 @@ fun SetupScreen(
             }
         }
 
-        if (board.setupConfirmedAt == null && !setupHintDismissed) {
+        if (showSetupHint) {
             item {
                 Surface(color = Gold.copy(alpha = 0.20f), shape = RoundedCornerShape(14.dp)) {
                     Column(
@@ -220,6 +237,8 @@ fun SetupScreen(
                 photoPath = state.boardPhotoPath,
                 selectedHoldId = selectedHoldId.takeIf { remapping },
                 onHoldDragged = actions.onMoveHold,
+                // The slider commits on release; until then the line follows the thumb.
+                kickboardBoundaryPreview = boundaryDraft,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(board.aspectRatio),
@@ -487,6 +506,7 @@ fun SetupScreen(
  * taken from a different spot leaves every hold marker off its hold. The board
  * preview directly above this card is the check for that, and the warning says so.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
     var error by remember { mutableStateOf<String?>(null) }
@@ -534,7 +554,9 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
         error?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Wraps rather than squeezes: side by side in a Row, the second label broke
+        // onto two lines, and a third button joins these once there is a photo.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = {
                     error = null
@@ -555,6 +577,7 @@ private fun BoardPhotoCard(photo: BoardPhoto?, actions: BoardActions) {
                 Text(if (photo == null) "Take a board photo" else "Retake photo")
             }
             OutlinedButton(
+                colors = primaryOutlinedColors(),
                 onClick = {
                     error = null
                     runCatching {
@@ -673,7 +696,7 @@ private fun RemapControls(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onSuggestHolds, enabled = !suggesting) {
+                OutlinedButton(colors = primaryOutlinedColors(), onClick = onSuggestHolds, enabled = !suggesting) {
                     if (suggesting) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
@@ -682,7 +705,7 @@ private fun RemapControls(
                         Text("Suggest from photo")
                     }
                 }
-                OutlinedButton(onClick = onAddHold) { Text("Add hold") }
+                OutlinedButton(colors = primaryOutlinedColors(), onClick = onAddHold) { Text("Add hold") }
             }
             selectedHoldId?.let { holdId ->
                 Row(verticalAlignment = Alignment.CenterVertically) {

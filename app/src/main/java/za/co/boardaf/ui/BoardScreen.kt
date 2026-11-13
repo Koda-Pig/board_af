@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +47,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,14 +85,29 @@ import kotlinx.coroutines.launch
 import za.co.boardaf.ui.theme.Moss
 import za.co.boardaf.ui.theme.Coral
 
-/** The board sheet's resting height while viewing a problem. */
+/** The board sheet's resting height before its content has been measured. */
 private val BOARD_SHEET_PEEK_HEIGHT = 100.dp
+
+/**
+ * Air under the feet-rule banner in the resting sheet. Less than the gap to the
+ * next row, so the peek ends on a clean edge instead of slicing through that row.
+ */
+private val BOARD_SHEET_PEEK_MARGIN = 8.dp
 
 /**
  * Height of [SheetHandle]. The setter's peek is this plus the measured strip, so
  * the strip shows in full at any font scale.
  */
 private val SHEET_HANDLE_HEIGHT = 24.dp
+
+/**
+ * Outlined buttons in this Material version default to grey (onSurfaceVariant)
+ * text, which read as disabled next to the green text buttons. Every enabled
+ * outlined button in the app uses this instead.
+ */
+@Composable
+internal fun primaryOutlinedColors() =
+    ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
 
 internal fun problemDisplayName(name: String): String = name.ifBlank { "Untitled draft" }
 
@@ -102,6 +120,7 @@ fun BoardScreen(
     state: BoardUiState,
     actions: BoardActions,
     contentPadding: PaddingValues,
+    snackbarHostState: SnackbarHostState,
 ) {
     val problem = state.selectedProblem
     val activeAssignments = if (state.isSetting) state.setter.draft.assignments else problem?.assignments.orEmpty()
@@ -159,6 +178,10 @@ fun BoardScreen(
                     item { SidePanel(state = state, actions = actions, problem = problem) }
                 }
             }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         } else {
             val sheetState = rememberStandardBottomSheetState(
                 initialValue = SheetValue.PartiallyExpanded,
@@ -168,10 +191,15 @@ fun BoardScreen(
             val scope = rememberCoroutineScope()
             val density = LocalDensity.current
             var stripHeight by remember { mutableStateOf(0.dp) }
-            val peekHeight: Dp = if (state.isSetting && stripHeight > 0.dp) {
-                SHEET_HANDLE_HEIGHT + stripHeight
-            } else {
-                BOARD_SHEET_PEEK_HEIGHT
+            var bannerHeight by remember { mutableStateOf(0.dp) }
+            // Sized to what the peek is for — the setter's strip, or the feet rule
+            // while viewing — so it shows that in full, at any font scale, and
+            // nothing of the row beneath it.
+            val peekHeight: Dp = when {
+                state.isSetting && stripHeight > 0.dp -> SHEET_HANDLE_HEIGHT + stripHeight
+                !state.isSetting && problem != null && bannerHeight > 0.dp ->
+                    SHEET_HANDLE_HEIGHT + bannerHeight + BOARD_SHEET_PEEK_MARGIN
+                else -> BOARD_SHEET_PEEK_HEIGHT
             }
 
             // The sheet follows the step: open for the steps that are all form
@@ -184,12 +212,35 @@ fun BoardScreen(
             LaunchedEffect(state.isSetting, state.setter.mode, state.setter.guidedStep) {
                 if (wantExpanded) sheetState.expand() else sheetState.partialExpand()
             }
+            // The scaffold moves its collapsed anchor when the peek changes but leaves
+            // a resting sheet at the old height until dragged, so re-settle it. Only
+            // a resting sheet, though: one the user has pulled open stays open when a
+            // hint wraps or the next problem's feet rule runs to a second line.
+            LaunchedEffect(peekHeight) {
+                if (sheetState.targetValue == SheetValue.PartiallyExpanded) sheetState.partialExpand()
+            }
 
             BottomSheetScaffold(
                 scaffoldState = scaffoldState,
                 sheetPeekHeight = peekHeight,
                 sheetContainerColor = MaterialTheme.colorScheme.surface,
                 sheetDragHandle = { SheetHandle() },
+                // The scaffold keeps this just above a resting sheet. On the setter that
+                // is the gap between the board and the strip, which is a little too
+                // short for a two-line snackbar: it hid the lowest row of holds. Let it
+                // sink over the handle, the one part of the sheet with nothing to read.
+                // An open sheet puts it at the screen's bottom edge, where there is no
+                // room to sink into.
+                snackbarHost = {
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = if (sheetState.targetValue == SheetValue.PartiallyExpanded) {
+                            Modifier.offset(y = SHEET_HANDLE_HEIGHT)
+                        } else {
+                            Modifier
+                        },
+                    )
+                },
                 sheetContent = {
                     if (state.isSetting) {
                         val chrome = rememberSetterChromeState()
@@ -230,6 +281,9 @@ fun BoardScreen(
                                 FeetRuleBanner(
                                     feetRule = problem.feetRule,
                                     footMarkCount = problem.assignments.count { it.role == ProblemHoldRole.FOOT_ONLY },
+                                    modifier = Modifier.onSizeChanged {
+                                        bannerHeight = with(density) { it.height.toDp() }
+                                    },
                                 )
                                 ProblemDetails(
                                     problem = problem,
@@ -238,7 +292,7 @@ fun BoardScreen(
                                 )
                             } else {
                                 Text(
-                                    "No problem selected. Open the library or tap + to set one.",
+                                    "No problem selected. Open Problems, or tap New to set one.",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(vertical = 24.dp),
                                 )
@@ -610,6 +664,7 @@ private fun ProblemDetails(
                     ) { Text("Repair") }
                     if (!hasErrors) {
                         OutlinedButton(
+                            colors = primaryOutlinedColors(),
                             onClick = { confirmForerun = true },
                             modifier = Modifier.weight(1f),
                         ) { Text("Publish…") }
@@ -622,6 +677,7 @@ private fun ProblemDetails(
                         colors = primaryColors,
                     ) { Text("Restore") }
                     OutlinedButton(
+                        colors = primaryOutlinedColors(),
                         onClick = { actions.onStartEditing(problem.id) },
                         modifier = Modifier.weight(1f),
                     ) { Text("Edit") }
@@ -633,6 +689,7 @@ private fun ProblemDetails(
                         colors = primaryColors,
                     ) { Text("Edit") }
                     OutlinedButton(
+                        colors = primaryOutlinedColors(),
                         onClick = { confirmForerun = true },
                         enabled = !hasErrors,
                         modifier = Modifier.weight(1f),
